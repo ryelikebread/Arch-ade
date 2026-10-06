@@ -1,0 +1,17 @@
+{
+  "id": "volcano",
+  "name": "Volcano",
+  "colors": {
+    "bg": "#1b0c0a",
+    "panel": "#2e1410",
+    "panel2": "#46201a",
+    "ink": "#ffe8d6",
+    "dim": "#c79a86",
+    "accent": "#ff7a1a",
+    "accent2": "#ffd23f",
+    "danger": "#ff3b30",
+    "ok": "#7ad35a",
+    "select": "#7a2a14",
+    "grid": "#5a2a1e"
+  }
+}

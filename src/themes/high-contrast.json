@@ -1,0 +1,17 @@
+{
+  "id": "high-contrast",
+  "name": "High Contrast",
+  "colors": {
+    "bg": "#000000",
+    "panel": "#0c0c0c",
+    "panel2": "#1c1c1c",
+    "ink": "#ffffff",
+    "dim": "#c8c8c8",
+    "accent": "#ffff00",
+    "accent2": "#00ffff",
+    "danger": "#ff5050",
+    "ok": "#50ff50",
+    "select": "#0044cc",
+    "grid": "#808080"
+  }
+}

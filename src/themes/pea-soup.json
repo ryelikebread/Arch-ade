@@ -1,0 +1,17 @@
+{
+  "id": "pea-soup",
+  "name": "Pea Soup",
+  "colors": {
+    "bg": "#0f380f",
+    "panel": "#306230",
+    "panel2": "#3f7a3f",
+    "ink": "#e0f8d0",
+    "dim": "#9bbc0f",
+    "accent": "#c4e86a",
+    "accent2": "#9bbc0f",
+    "danger": "#f08a5d",
+    "ok": "#c4e86a",
+    "select": "#4c8a3c",
+    "grid": "#234d23"
+  }
+}
