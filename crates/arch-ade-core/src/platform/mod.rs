@@ -262,5 +262,11 @@ fn restore_via_crate(r: &TrashReceipt) -> Result<()> {
         })
         .max_by_key(|i| i.time_deleted)
         .ok_or_else(|| crate::Error::NotFound(format!("{} is no longer in the trash", r.original.display())))?;
+    // The crate restores to `original_parent/name`, and on Windows `name` is the
+    // display name, which can lack the extension. Restore under the real name.
+    let mut item = item;
+    if let Some(name) = r.original.file_name() {
+        item.name = name.to_owned();
+    }
     trash::os_limited::restore_all([item]).map_err(|e| crate::Error::Trash(e.to_string()))
 }
