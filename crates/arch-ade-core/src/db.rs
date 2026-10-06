@@ -44,6 +44,21 @@ const MIGRATIONS: &[&str] = &[
         at INTEGER NOT NULL);
     CREATE INDEX ops_plan_run ON ops(plan_id, run);
     "#,
+    // v2: what the rules did on their own (watcher runs), for the Activity list.
+    r#"
+    CREATE TABLE rule_activity (
+        id INTEGER PRIMARY KEY,
+        at INTEGER NOT NULL,
+        folder TEXT NOT NULL,
+        path TEXT NOT NULL,
+        rule_id TEXT NOT NULL,
+        rule_name TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        destination TEXT,
+        plan_id INTEGER REFERENCES plans(id),
+        message TEXT);
+    CREATE INDEX rule_activity_at ON rule_activity(at);
+    "#,
 ];
 
 pub struct Db {

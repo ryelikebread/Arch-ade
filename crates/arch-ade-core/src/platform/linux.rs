@@ -38,6 +38,19 @@ impl Platform for Linux {
         None
     }
 
+    fn tags_supported(&self) -> bool {
+        true
+    }
+    fn read_tags(&self, path: &Path) -> Vec<String> {
+        super::xattr_tags::read(path, crate::tags::XDG_TAGS_XATTR, crate::tags::xdg_names)
+    }
+    fn add_tags(&self, path: &Path, tags: &[String]) -> Result<Option<Vec<u8>>> {
+        super::xattr_tags::add(path, crate::tags::XDG_TAGS_XATTR, tags, crate::tags::xdg_add)
+    }
+    fn restore_tags(&self, path: &Path, previous: Option<&[u8]>) -> Result<()> {
+        super::xattr_tags::restore(path, crate::tags::XDG_TAGS_XATTR, previous)
+    }
+
     fn os_thumbnail(&self, path: &Path, px: u32, tools: &Tools) -> Option<Vec<u8>> {
         let dir = tempfile::tempdir().ok()?;
         let out = dir.path().join("thumb.png");

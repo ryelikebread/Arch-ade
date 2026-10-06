@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::kind::{self, Kind};
 use crate::names;
 use crate::platform::Platform;
+use crate::protect::{self, ProjectKind};
 use crate::source::{self, SourceInfo};
 use crate::Result;
 
@@ -40,6 +41,8 @@ pub struct FileEntry {
     pub modified: Option<i64>,
     pub added: Option<i64>,
     pub source: Option<SourceInfo>,
+    /// Set on folders that are project roots (their contents are protected).
+    pub project: Option<ProjectKind>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -85,6 +88,10 @@ pub fn scan(root: &Path, opts: ScanOptions, platform: &dyn Platform) -> Result<S
                     continue;
                 }
                 paths.push((e.path().to_path_buf(), e.path_is_symlink()));
+                // List a project folder, never its contents.
+                if e.file_type().is_dir() && protect::project_kind(e.path()).is_some() {
+                    it.skip_current_dir();
+                }
             }
             Err(e) => errors.push(e.to_string()),
         }
@@ -122,6 +129,7 @@ pub fn entry_for(root: &Path, p: &Path, is_symlink: bool, platform: &dyn Platfor
         modified: ms(md.modified()),
         added: platform.added_time(p).map(|s| s * 1000),
         source,
+        project: if is_dir && !is_symlink { protect::project_kind(p) } else { None },
         name,
     })
 }
@@ -158,6 +166,24 @@ mod tests {
         let r = scan(root, ScanOptions { recursive: true, include_hidden: true, max_depth: 0 }, p).unwrap();
         assert_eq!(r.entries.len(), 4);
         assert!(r.entries.iter().any(|e| e.rel == "sub/b.png"));
+    }
+
+    #[test]
+    fn recursive_scan_skips_project_contents() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        std::fs::create_dir_all(root.join("app/.git")).unwrap();
+        std::fs::create_dir_all(root.join("app/src")).unwrap();
+        std::fs::write(root.join("app/src/main.rs"), "fn main() {}").unwrap();
+        std::fs::create_dir_all(root.join("photos")).unwrap();
+        std::fs::write(root.join("photos/a.jpg"), "x").unwrap();
+        let opts = ScanOptions { recursive: true, include_hidden: true, max_depth: 0 };
+        let r = scan(root, opts, crate::platform::current()).unwrap();
+        let rels: Vec<_> = r.entries.iter().map(|e| e.rel.as_str()).collect();
+        assert!(rels.contains(&"app"));
+        assert!(rels.contains(&"photos/a.jpg"));
+        assert!(!rels.iter().any(|r| r.starts_with("app/")), "{rels:?}");
+        assert_eq!(r.entries.iter().find(|e| e.rel == "app").unwrap().project, Some(ProjectKind::Git));
     }
 
     #[test]

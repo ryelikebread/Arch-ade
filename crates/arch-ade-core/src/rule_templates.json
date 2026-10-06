@@ -1,0 +1,89 @@
+[
+  {
+    "id": "route-github",
+    "name": "GitHub downloads to Developer",
+    "group": "Route GitHub downloads",
+    "folders": ["{downloads}"],
+    "match": "any",
+    "conditions": [
+      { "type": "sourceDomain", "domains": ["github.com", "githubusercontent.com", "codeload.github.com", "github.io"] }
+    ],
+    "actions": [{ "type": "move", "to": "{home}/Developer" }]
+  },
+  {
+    "id": "route-slack",
+    "name": "Slack downloads to Work",
+    "group": "Route Slack downloads",
+    "folders": ["{downloads}"],
+    "match": "any",
+    "conditions": [
+      { "type": "app", "apps": ["Slack"] },
+      { "type": "sourceDomain", "domains": ["slack.com", "slack-edge.com", "slack-files.com"] }
+    ],
+    "actions": [{ "type": "move", "to": "{home}/Work" }]
+  },
+  {
+    "id": "downloads-images",
+    "name": "Images",
+    "group": "Organize Downloads",
+    "folders": ["{downloads}"],
+    "conditions": [{ "type": "kind", "kinds": ["image", "heic", "rawImage", "vector"] }],
+    "actions": [{ "type": "move", "to": "Images" }]
+  },
+  {
+    "id": "downloads-pdfs",
+    "name": "PDFs",
+    "group": "Organize Downloads",
+    "folders": ["{downloads}"],
+    "conditions": [{ "type": "kind", "kinds": ["pdf"] }],
+    "actions": [{ "type": "move", "to": "PDFs" }]
+  },
+  {
+    "id": "downloads-videos",
+    "name": "Videos",
+    "group": "Organize Downloads",
+    "folders": ["{downloads}"],
+    "conditions": [{ "type": "kind", "kinds": ["video"] }],
+    "actions": [{ "type": "move", "to": "Videos" }]
+  },
+  {
+    "id": "downloads-archives",
+    "name": "Archives",
+    "group": "Organize Downloads",
+    "folders": ["{downloads}"],
+    "conditions": [{ "type": "kind", "kinds": ["archive"] }],
+    "actions": [{ "type": "move", "to": "Archives" }]
+  },
+  {
+    "id": "downloads-source-code",
+    "name": "Source Code",
+    "group": "Organize Downloads",
+    "folders": ["{downloads}"],
+    "conditions": [
+      {
+        "type": "extension",
+        "extensions": [
+          "rs", "py", "js", "mjs", "ts", "tsx", "jsx", "c", "h", "cpp", "hpp", "cc", "cs", "java", "kt", "go",
+          "rb", "php", "swift", "m", "sh", "ps1", "lua", "sql", "ipynb", "gd", "glsl", "hlsl"
+        ]
+      }
+    ],
+    "actions": [{ "type": "move", "to": "Source Code" }]
+  },
+  {
+    "id": "clean-desktop",
+    "name": "Desktop files older than 7 days to Archive",
+    "group": "Clean Desktop",
+    "folders": ["{desktop}"],
+    "conditions": [{ "type": "age", "date": "added", "olderThanDays": 7 }],
+    "actions": [{ "type": "move", "to": "Archive" }]
+  },
+  {
+    "id": "auto-trash-old-downloads",
+    "name": "Trash downloads older than 30 days",
+    "group": "Auto-trash by age",
+    "folders": ["{downloads}"],
+    "conditions": [{ "type": "age", "date": "added", "olderThanDays": 30 }],
+    "actions": [{ "type": "trash" }]
+  }
+]

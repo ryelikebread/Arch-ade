@@ -81,6 +81,7 @@ dependencies = [
  "plist",
  "quick-xml 0.42.0",
  "rayon",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

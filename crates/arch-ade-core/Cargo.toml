@@ -31,6 +31,7 @@ walkdir = "2.5.0"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 libheif-rs = { version = "3", features = ["embedded-libheif"], optional = true }
+regex = "1.13.1"
 
 [target.'cfg(unix)'.dependencies]
 xattr = "1.6"

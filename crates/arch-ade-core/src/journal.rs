@@ -48,9 +48,50 @@ pub struct RunReport {
 enum Step {
     Mkdir(PathBuf),
     Rmdir(PathBuf),
-    Move { from: PathBuf, to: PathBuf, expect: Option<Fingerprint>, size_only: bool },
-    Trash { path: PathBuf, expect: Option<Fingerprint>, size_only: bool },
+    Move {
+        from: PathBuf,
+        to: PathBuf,
+        expect: Option<Fingerprint>,
+        size_only: bool,
+    },
+    Trash {
+        path: PathBuf,
+        expect: Option<Fingerprint>,
+        size_only: bool,
+    },
     Restore(TrashReceipt),
+    Copy {
+        from: PathBuf,
+        to: PathBuf,
+        expect: Option<Fingerprint>,
+        size_only: bool,
+    },
+    Archive {
+        from: PathBuf,
+        to: PathBuf,
+        expect: Option<Fingerprint>,
+        size_only: bool,
+    },
+    /// Undo of Copy/Archive: the file we created goes to the trash, never
+    /// deleted, and only if it is unchanged since we made it.
+    TrashCreated {
+        path: PathBuf,
+        made: Option<Fingerprint>,
+    },
+    Tag {
+        path: PathBuf,
+        tags: Vec<String>,
+    },
+    RestoreTags {
+        path: PathBuf,
+        previous: Option<Vec<u8>>,
+    },
+}
+
+/// What a Tag step stores so undo can restore the attribute byte for byte.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct TagReceipt {
+    previous: Option<String>,
 }
 
 enum Outcome {
@@ -158,6 +199,15 @@ impl<'a> Journal<'a> {
                     size_only: false,
                 },
                 "trash" => Step::Restore(serde_json::from_str(&receipt.unwrap_or_default())?),
+                "copy" | "archive" => Step::TrashCreated {
+                    path: PathBuf::from(dst.unwrap_or_default()),
+                    made: receipt.as_deref().and_then(|r| serde_json::from_str(r).ok()).flatten(),
+                },
+                "tag" => {
+                    let r: TagReceipt = serde_json::from_str(&receipt.unwrap_or_default())?;
+                    let previous = r.previous.map(|b| base64_decode(&b)).transpose()?;
+                    Step::RestoreTags { path: PathBuf::from(src.unwrap_or_default()), previous }
+                }
                 other => return Err(Error::Other(format!("cannot undo step kind {other}"))),
             };
             steps.push(step);
@@ -382,6 +432,45 @@ impl<'a> Journal<'a> {
                 self.platform.restore(r)?;
                 Ok(Outcome::Done(None))
             }
+            Step::Copy { from, to, expect, size_only } | Step::Archive { from, to, expect, size_only } => {
+                let from = self.scope.check(from)?;
+                let to = self.scope.check(to)?;
+                if std::fs::symlink_metadata(&from).is_err() {
+                    return Err(Error::NotFound(from.display().to_string()));
+                }
+                check_fingerprint(&from, expect, *size_only)?;
+                if matches!(step, Step::Copy { .. }) {
+                    crate::fsops::copy(&from, &to)?;
+                } else {
+                    crate::fsops::zip(&from, &to)?;
+                }
+                Ok(Outcome::Done(Some(serde_json::to_string(&Fingerprint::of(&to))?)))
+            }
+            Step::TrashCreated { path, made } => {
+                let path = self.scope.check(path)?;
+                if std::fs::symlink_metadata(&path).is_err() {
+                    return Ok(Outcome::Skipped("already gone".into()));
+                }
+                if made.is_some() && Fingerprint::of(&path) != *made {
+                    return Ok(Outcome::Skipped("changed since it was created, left in place".into()));
+                }
+                let receipt = self.platform.trash(&path)?;
+                Ok(Outcome::Done(Some(serde_json::to_string(&receipt)?)))
+            }
+            Step::Tag { path, tags } => {
+                let path = self.scope.check(path)?;
+                let previous = self.platform.add_tags(&path, tags)?;
+                let r = TagReceipt { previous: previous.map(|b| base64_encode(&b)) };
+                Ok(Outcome::Done(Some(serde_json::to_string(&r)?)))
+            }
+            Step::RestoreTags { path, previous } => {
+                let path = self.scope.check(path)?;
+                if std::fs::symlink_metadata(&path).is_err() {
+                    return Ok(Outcome::Skipped("file is gone; tags not restored".into()));
+                }
+                self.platform.restore_tags(&path, previous.as_deref())?;
+                Ok(Outcome::Done(None))
+            }
         }
     }
 }
@@ -391,6 +480,9 @@ fn forward_step(o: &PlannedOp, size_only: bool) -> Step {
         Op::Mkdir { path } => Step::Mkdir(path.clone()),
         Op::Move { from, to } => Step::Move { from: from.clone(), to: to.clone(), expect: o.expect, size_only },
         Op::Trash { path } => Step::Trash { path: path.clone(), expect: o.expect, size_only },
+        Op::Copy { from, to } => Step::Copy { from: from.clone(), to: to.clone(), expect: o.expect, size_only },
+        Op::Archive { from, to } => Step::Archive { from: from.clone(), to: to.clone(), expect: o.expect, size_only },
+        Op::Tag { path, tags } => Step::Tag { path: path.clone(), tags: tags.clone() },
     }
 }
 
@@ -402,7 +494,22 @@ fn describe(step: &Step) -> (&'static str, Option<String>, Option<String>) {
         Step::Move { from, to, .. } => ("move", s(from), s(to)),
         Step::Trash { path, .. } => ("trash", s(path), None),
         Step::Restore(r) => ("restore", r.token.clone(), s(&r.original)),
+        Step::Copy { from, to, .. } => ("copy", s(from), s(to)),
+        Step::Archive { from, to, .. } => ("archive", s(from), s(to)),
+        Step::TrashCreated { path, .. } => ("trash-created", s(path), None),
+        Step::Tag { path, .. } => ("tag", s(path), None),
+        Step::RestoreTags { path, .. } => ("restore-tags", s(path), None),
     }
+}
+
+fn base64_encode(b: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(b)
+}
+
+fn base64_decode(s: &str) -> Result<Vec<u8>> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(s).map_err(|e| Error::Other(format!("bad tag receipt: {e}")))
 }
 
 fn check_fingerprint(path: &Path, expect: &Option<Fingerprint>, size_only: bool) -> Result<()> {

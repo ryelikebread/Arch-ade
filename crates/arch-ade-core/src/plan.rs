@@ -13,9 +13,31 @@ use crate::scope::Scope;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Op {
-    Mkdir { path: PathBuf },
-    Move { from: PathBuf, to: PathBuf },
-    Trash { path: PathBuf },
+    Mkdir {
+        path: PathBuf,
+    },
+    Move {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    Trash {
+        path: PathBuf,
+    },
+    /// New file or folder copy; undo sends the copy to the trash.
+    Copy {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    /// New zip of `from`; undo sends the zip to the trash.
+    Archive {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    /// Add OS file tags; undo restores the previous tags.
+    Tag {
+        path: PathBuf,
+        tags: Vec<String>,
+    },
 }
 
 /// Size + modification time captured at plan time. If either changed by the
@@ -85,6 +107,11 @@ impl<'a> Planner<'a> {
         Planner { scope, rules }
     }
 
+    /// Blocking issue text when `p` lies inside a protected project folder.
+    fn protected(&self, p: &Path) -> Option<String> {
+        crate::protect::protection_issue(&self.scope.roots(), p)
+    }
+
     fn key(&self, p: &Path) -> DirKey {
         let parent = p.parent().map(Path::to_path_buf).unwrap_or_default();
         let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -97,7 +124,10 @@ impl<'a> Planner<'a> {
         let mut checked: Vec<PathBuf> = Vec::new();
         for p in paths {
             match self.scope.check(p) {
-                Ok(c) if std::fs::symlink_metadata(&c).is_ok() => checked.push(c),
+                Ok(c) if std::fs::symlink_metadata(&c).is_ok() => match self.protected(&c) {
+                    Some(why) => plan.issue(p, why, true),
+                    None => checked.push(c),
+                },
                 Ok(_) => plan.issue(p, "file no longer exists", false),
                 Err(e) => plan.issue(p, e.to_string(), true),
             }
@@ -122,10 +152,23 @@ impl<'a> Planner<'a> {
     /// names when targets overlap with other sources (e.g. swapping a<->b or
     /// renumbering 1..n).
     pub fn moves(&self, pairs: &[(PathBuf, PathBuf)], label: impl Into<String>) -> Plan {
-        let mut plan = Plan { label: label.into(), ..Default::default() };
-        let mut moves: Vec<(PathBuf, PathBuf)> = Vec::new();
+        let intents: Vec<Intent> =
+            pairs.iter().map(|(f, t)| Intent { path: f.clone(), action: Action::MoveTo(t.clone()) }).collect();
+        self.build(&intents, label)
+    }
 
-        for (from, to) in pairs {
+    /// Plan a mixed set of actions (what the rules engine produces). Ops run
+    /// in this order: create folders, tag, copy, archive, move, trash, so a
+    /// file can be tagged or copied before it is moved, and archived before
+    /// its original goes to the trash.
+    pub fn build(&self, intents: &[Intent], label: impl Into<String>) -> Plan {
+        let mut plan = Plan { label: label.into(), ..Default::default() };
+        let mut tags: Vec<(PathBuf, Vec<String>)> = Vec::new();
+        let mut transfers: Vec<(PathBuf, PathBuf, Transfer)> = Vec::new();
+        let mut trash: Vec<PathBuf> = Vec::new();
+
+        for it in intents {
+            let from = &it.path;
             let from_c = match self.scope.check(from) {
                 Ok(c) => c,
                 Err(e) => {
@@ -137,6 +180,23 @@ impl<'a> Planner<'a> {
                 plan.issue(from, "file no longer exists", true);
                 continue;
             }
+            if let Some(why) = self.protected(&from_c) {
+                plan.issue(from, why, true);
+                continue;
+            }
+            let (to, kind) = match &it.action {
+                Action::Tag(t) => {
+                    tags.push((from_c, t.clone()));
+                    continue;
+                }
+                Action::Trash => {
+                    trash.push(from_c);
+                    continue;
+                }
+                Action::MoveTo(to) => (to, Transfer::Move),
+                Action::CopyTo(to) => (to, Transfer::Copy),
+                Action::ArchiveTo(to) => (to, Transfer::Archive),
+            };
             let to_c = match self.scope.check(to) {
                 Ok(c) => c,
                 Err(e) => {
@@ -144,6 +204,10 @@ impl<'a> Planner<'a> {
                     continue;
                 }
             };
+            if let Some(why) = self.protected(&to_c) {
+                plan.issue(to, why, true);
+                continue;
+            }
             let name = to_c.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             if let Err(e) = names::validate(self.rules, &name) {
                 plan.issue(to, e.to_string(), true);
@@ -154,28 +218,30 @@ impl<'a> Planner<'a> {
                 continue;
             }
             if to_c.starts_with(&from_c) {
-                plan.issue(to, "cannot move a folder into itself", true);
+                plan.issue(to, "cannot put a folder inside itself", true);
                 continue;
             }
-            moves.push((from_c, to_c));
+            transfers.push((from_c, to_c, kind));
         }
 
         // Two targets that would be the same directory entry.
         let mut seen: HashMap<DirKey, PathBuf> = HashMap::new();
-        for (_, to) in &moves {
+        for (_, to, _) in &transfers {
             if let Some(prev) = seen.insert(self.key(to), to.clone()) {
                 plan.issue(to, format!("two files would both be named {}", prev.display()), true);
             }
         }
 
-        let source_keys: HashSet<DirKey> = moves.iter().map(|(f, _)| self.key(f)).collect();
+        // Only moves free up their old name for another target.
+        let freed: HashSet<DirKey> =
+            transfers.iter().filter(|(_, _, k)| *k == Transfer::Move).map(|(f, _, _)| self.key(f)).collect();
         let mut needs_temp = false;
-        for (from, to) in &moves {
-            let case_only = self.key(from) == self.key(to);
+        for (from, to, kind) in &transfers {
+            let case_only = *kind == Transfer::Move && self.key(from) == self.key(to);
             if case_only || std::fs::symlink_metadata(to).is_err() {
                 continue;
             }
-            if source_keys.contains(&self.key(to)) {
+            if *kind == Transfer::Move && freed.contains(&self.key(to)) {
                 needs_temp = true; // target is freed by another move in this plan
             } else {
                 plan.issue(to, "a file with this name already exists", true);
@@ -184,7 +250,7 @@ impl<'a> Planner<'a> {
 
         // Folders to create, shallowest first.
         let mut dirs: Vec<PathBuf> = Vec::new();
-        for (_, to) in &moves {
+        for (_, to, _) in &transfers {
             let mut cur = to.parent();
             let mut chain = vec![];
             while let Some(d) = cur {
@@ -209,6 +275,20 @@ impl<'a> Planner<'a> {
             plan.ops.push(PlannedOp { op: Op::Mkdir { path: d }, expect: None });
         }
 
+        for (path, t) in tags {
+            plan.ops.push(PlannedOp { expect: None, op: Op::Tag { path, tags: t } });
+        }
+        for (from, to, kind) in &transfers {
+            let op = match kind {
+                Transfer::Copy => Op::Copy { from: from.clone(), to: to.clone() },
+                Transfer::Archive => Op::Archive { from: from.clone(), to: to.clone() },
+                Transfer::Move => continue,
+            };
+            plan.ops.push(PlannedOp { expect: Fingerprint::of(from), op });
+        }
+
+        let moves: Vec<(PathBuf, PathBuf)> =
+            transfers.into_iter().filter(|(_, _, k)| *k == Transfer::Move).map(|(f, t, _)| (f, t)).collect();
         if needs_temp {
             let stamp = std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
             let mut second = Vec::new();
@@ -226,8 +306,41 @@ impl<'a> Planner<'a> {
                 plan.ops.push(PlannedOp { expect: Fingerprint::of(&from), op: Op::Move { from, to } });
             }
         }
+
+        if !trash.is_empty() {
+            let t = self.trash(&trash, "");
+            plan.issues.extend(t.issues);
+            plan.ops.extend(t.ops);
+        }
         plan
     }
+}
+
+/// One thing to do to one file, before planning. The planner checks scope,
+/// names, collisions and project protection, and orders the ops.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Intent {
+    pub path: PathBuf,
+    pub action: Action,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Action {
+    MoveTo(PathBuf),
+    CopyTo(PathBuf),
+    /// Compress into a new zip at this path (the original is left alone).
+    ArchiveTo(PathBuf),
+    Trash,
+    Tag(Vec<String>),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Transfer {
+    Move,
+    Copy,
+    Archive,
 }
 
 #[cfg(test)]
@@ -291,6 +404,17 @@ mod tests {
         assert!(!plan.is_blocked());
         assert!(plan.ops.is_empty());
         assert_eq!(plan.issues.len(), 1);
+    }
+
+    #[test]
+    fn project_contents_are_protected() {
+        let (_d, root, scope) = setup(&["app/.git/HEAD", "app/src/main.rs", "loose.txt"]);
+        let pl = Planner::new(&scope, NameRules::Linux);
+        assert!(pl.trash(&[root.join("app/src/main.rs")], "t").is_blocked());
+        assert!(pl.moves(&[(root.join("app/src/main.rs"), root.join("main.rs"))], "t").is_blocked());
+        assert!(pl.moves(&[(root.join("loose.txt"), root.join("app/loose.txt"))], "t").is_blocked());
+        // The project folder as a whole can still be moved on purpose.
+        assert!(!pl.moves(&[(root.join("app"), root.join("Projects/app"))], "t").is_blocked());
     }
 
     #[test]

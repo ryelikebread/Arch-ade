@@ -63,6 +63,19 @@ impl Platform for Mac {
         added_time(path)
     }
 
+    fn tags_supported(&self) -> bool {
+        true
+    }
+    fn read_tags(&self, path: &Path) -> Vec<String> {
+        super::xattr_tags::read(path, crate::tags::FINDER_TAGS_XATTR, crate::tags::finder_names)
+    }
+    fn add_tags(&self, path: &Path, tags: &[String]) -> Result<Option<Vec<u8>>> {
+        super::xattr_tags::add(path, crate::tags::FINDER_TAGS_XATTR, tags, crate::tags::finder_add)
+    }
+    fn restore_tags(&self, path: &Path, previous: Option<&[u8]>) -> Result<()> {
+        super::xattr_tags::restore(path, crate::tags::FINDER_TAGS_XATTR, previous)
+    }
+
     fn os_thumbnail(&self, path: &Path, px: u32, tools: &Tools) -> Option<Vec<u8>> {
         let ql = tools.qlmanage.as_ref()?;
         let dir = tempfile::tempdir().ok()?;

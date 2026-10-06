@@ -71,6 +71,66 @@ pub trait Platform: Send + Sync {
     /// Directories to search for helper tools besides `PATH` (GUI apps on macOS
     /// don't inherit the shell's PATH, so Homebrew must be probed explicitly).
     fn extra_tool_dirs(&self) -> Vec<PathBuf>;
+
+    /// Whether files can carry tags that the OS file manager shows.
+    fn tags_supported(&self) -> bool {
+        false
+    }
+    fn read_tags(&self, _path: &Path) -> Vec<String> {
+        Vec::new()
+    }
+    /// Add tags, keeping existing ones. Returns the attribute's previous raw
+    /// value (None if it had none) so undo can put it back exactly.
+    fn add_tags(&self, _path: &Path, _tags: &[String]) -> Result<Option<Vec<u8>>> {
+        Err(crate::Error::Other("file tags are not available on this system".into()))
+    }
+    fn restore_tags(&self, _path: &Path, _previous: Option<&[u8]>) -> Result<()> {
+        Err(crate::Error::Other("file tags are not available on this system".into()))
+    }
+}
+
+/// Tag storage in one extended attribute (macOS and Linux).
+#[cfg(unix)]
+pub(crate) mod xattr_tags {
+    use std::path::Path;
+
+    use crate::Result;
+
+    pub fn read(path: &Path, key: &str, names: fn(&[u8]) -> Vec<String>) -> Vec<String> {
+        xattr::get(path, key).ok().flatten().map(|raw| names(&raw)).unwrap_or_default()
+    }
+
+    pub fn add(
+        path: &Path,
+        key: &str,
+        tags: &[String],
+        merge: fn(Option<&[u8]>, &[String]) -> Vec<u8>,
+    ) -> Result<Option<Vec<u8>>> {
+        let previous = xattr::get(path, key)?;
+        xattr::set(path, key, &merge(previous.as_deref(), tags))?;
+        Ok(previous)
+    }
+
+    pub fn restore(path: &Path, key: &str, previous: Option<&[u8]>) -> Result<()> {
+        match previous {
+            Some(raw) => xattr::set(path, key, raw)?,
+            None => match xattr::remove(path, key) {
+                Ok(()) => {}
+                // Already gone is what we wanted.
+                Err(e) if e.raw_os_error() == Some(libc_enoattr()) => {}
+                Err(e) => return Err(e.into()),
+            },
+        }
+        Ok(())
+    }
+
+    fn libc_enoattr() -> i32 {
+        if cfg!(target_os = "macos") {
+            93 // ENOATTR
+        } else {
+            61 // ENODATA
+        }
+    }
 }
 
 /// The platform implementation for the running OS.
