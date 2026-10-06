@@ -8,3 +8,4 @@
 - Phase 1: pixel-style UI with five JSON color themes, in-app Help, Cmd/Ctrl hotkeys, sample test-folder generator, CI on all three OSes, release workflow with signing disabled. Why: usable app plus a repeatable way to check it.
 - CI: replaced `chunks_exact` with `as_chunks` in UTF-16 decoding and Windows thumbnails. Why: Rust 1.99 clippy rejects the old form under `-D warnings`.
 - CI/Windows: libheif comes from vcpkg (`libheif[core]`, decoder only) on MSVC. Why: libheif-sys only links vcpkg's build on Windows, it can't build its embedded copy there.
+- Windows: OS thumbnails now ask for real thumbnails only (`SIIGBF_THUMBNAILONLY`). Why: Windows otherwise returned the generic file-type icon for unreadable files, which the preview showed as if it were the content.

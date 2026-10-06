@@ -64,7 +64,9 @@ fn shell_thumbnail(path: &Path, px: u32) -> Option<Vec<u8>> {
         DIB_RGB_COLORS, HGDIOBJ,
     };
     use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
-    use windows::Win32::UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_RESIZETOFIT};
+    use windows::Win32::UI::Shell::{
+        IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_RESIZETOFIT, SIIGBF_THUMBNAILONLY,
+    };
 
     // SAFETY: plain COM/GDI calls on a thread we own; every handle is released below.
     unsafe {
@@ -72,7 +74,11 @@ fn shell_thumbnail(path: &Path, px: u32) -> Option<Vec<u8>> {
         let result = (|| {
             let factory: IShellItemImageFactory =
                 SHCreateItemFromParsingName(&HSTRING::from(path.as_os_str()), None).ok()?;
-            let hbmp = factory.GetImage(SIZE { cx: px as i32, cy: px as i32 }, SIIGBF_RESIZETOFIT).ok()?;
+            let hbmp = {
+                // THUMBNAILONLY: fail instead of handing back the generic file-type icon.
+                let flags = SIIGBF_RESIZETOFIT | SIIGBF_THUMBNAILONLY;
+                factory.GetImage(SIZE { cx: px as i32, cy: px as i32 }, flags).ok()?
+            };
             let obj = HGDIOBJ(hbmp.0);
             let mut bm = BITMAP::default();
             let got = GetObjectW(obj, std::mem::size_of::<BITMAP>() as i32, Some(&mut bm as *mut _ as *mut _));
