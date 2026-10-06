@@ -364,6 +364,36 @@ impl Places {
     }
 }
 
+impl Rule {
+    /// Absolute folders this rule writes into (`{home}/Work`, `/data/x`), up
+    /// to the first per-file token. Relative destinations stay inside the
+    /// folder being organized and aren't listed. The UI asks the user to
+    /// allow these before the rule can run.
+    pub fn fixed_destinations(&self, places: &Places) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        for a in &self.actions {
+            let to = match a {
+                RuleAction::Move { to, .. } | RuleAction::Copy { to, .. } | RuleAction::Archive { to, .. } => to,
+                _ => continue,
+            };
+            // Skip a leading {place}, then cut at the next token.
+            let skip = if to.starts_with('{') { to.find('}').map_or(0, |i| i + 1) } else { 0 };
+            let cut = to[skip..].find('{').map_or(to.len(), |i| skip + i);
+            let fixed = to[..cut].trim_end_matches(['/', '\\']);
+            if fixed.is_empty() {
+                continue;
+            }
+            // Resolving against a relative base keeps relative paths relative.
+            if let Ok(p) = places.resolve(fixed, Path::new(""), &|_| None) {
+                if p.is_absolute() && !out.contains(&p) {
+                    out.push(p);
+                }
+            }
+        }
+        out
+    }
+}
+
 /// Facts about one file the conditions look at.
 pub struct Facts<'a> {
     pub entry: &'a FileEntry,

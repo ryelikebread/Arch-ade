@@ -29,6 +29,8 @@ export interface FileEntry {
   modified: number | null;
   added: number | null;
   source: SourceInfo | null;
+  /** Set on folders that are project roots; their contents are protected. */
+  project: string | null;
 }
 
 export interface ScanResult {
@@ -71,7 +73,10 @@ export interface Preview {
 export type Op =
   | { type: "mkdir"; path: string }
   | { type: "move"; from: string; to: string }
-  | { type: "trash"; path: string };
+  | { type: "trash"; path: string }
+  | { type: "copy"; from: string; to: string }
+  | { type: "archive"; from: string; to: string }
+  | { type: "tag"; path: string; tags: string[] };
 
 export interface Plan {
   label: string;
@@ -147,4 +152,103 @@ export interface AppInfo {
   tools: Tools;
   dataDir: string;
   interruptedPlans: number[];
+}
+
+// ---------- rules (see crates/arch-ade-core/src/rules.rs) ----------
+
+export type AgeDate = "added" | "created" | "modified" | "downloaded";
+export type SizeValue = number | string;
+
+export type Test =
+  | { type: "kind"; kinds: Kind[] }
+  | { type: "extension"; extensions: string[] }
+  | { type: "sourceDomain"; domains: string[] }
+  | { type: "sourceUrl"; pattern: string }
+  | { type: "app"; apps: string[] }
+  | { type: "size"; atLeast?: SizeValue; atMost?: SizeValue }
+  | { type: "age"; date?: AgeDate; olderThanDays?: number; newerThanDays?: number }
+  | { type: "nameRegex"; pattern: string; caseSensitive?: boolean };
+
+export type Condition = Test & { not?: boolean };
+
+export type IfExists = "rename" | "skip";
+
+export type RuleAction =
+  | { type: "move"; to: string; ifExists?: IfExists }
+  | { type: "copy"; to: string; ifExists?: IfExists }
+  | { type: "rename"; pattern: string }
+  | { type: "tag"; tags: string[] }
+  | { type: "trash" }
+  | { type: "archive"; to: string; removeOriginal?: boolean; ifExists?: IfExists };
+
+export interface Rule {
+  id: string;
+  name: string;
+  enabled?: boolean;
+  auto?: boolean;
+  group?: string;
+  folders?: string[];
+  match?: "all" | "any";
+  conditions: Condition[];
+  actions: RuleAction[];
+}
+
+export interface RulesState {
+  rules: Rule[];
+  templates: Rule[];
+  tagsSupported: boolean;
+}
+
+export interface RuleMatch {
+  path: string;
+  ruleId: string;
+  ruleName: string;
+  destination: string | null;
+  skipped: string | null;
+}
+
+export interface RulesPlanOut extends PlanOut {
+  matches: RuleMatch[];
+  ruleErrors: string[];
+}
+
+export interface Destination {
+  ruleId: string;
+  path: string;
+  exists: boolean;
+  allowed: boolean;
+}
+
+export interface Watched {
+  folders: string[];
+  pending: number;
+}
+
+export interface Activity {
+  id: number;
+  at: number;
+  folder: string;
+  path: string;
+  ruleId: string;
+  ruleName: string;
+  outcome: "skipped" | "dryRun" | "applied" | "failed";
+  destination: string | null;
+  planId: number | null;
+  message: string | null;
+}
+
+export interface ActivityEvent {
+  folder: string;
+  outcome: "skipped" | "dryRun" | "applied" | "failed";
+  files: number;
+  label: string;
+  planId: number | null;
+  error: string | null;
+}
+
+export interface UpdateInfo {
+  version: string;
+  required: boolean;
+  notes: string;
+  url: string | null;
 }

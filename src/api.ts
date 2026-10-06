@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  AppInfo, DupeGroup, PlanOut, PlanSummary, Preview, RenameOptions, RenameRow, RunReport, ScanOptions, ScanResult,
+  Activity, AppInfo, Destination, DupeGroup, PlanOut, PlanSummary, Preview, RenameOptions, RenameRow, Rule, RulesPlanOut,
+  RulesState, RunReport, ScanOptions, ScanResult, UpdateInfo, Watched,
 } from "./types";
 
 export const api = {
@@ -24,4 +25,14 @@ export const api = {
   getSettings: () => invoke<Record<string, unknown>>("get_settings"),
   setSetting: (key: string, value: unknown) => invoke<void>("set_setting", { key, value }),
   userThemes: () => invoke<unknown[]>("user_themes"),
+  rulesGet: () => invoke<RulesState>("rules_get"),
+  rulesSave: (rules: Rule[]) => invoke<void>("rules_save", { rules }),
+  /** Saved enabled rules on the open folder, or `rules` (unsaved, all treated as on). */
+  planRules: (folder?: string, rules?: Rule[]) => invoke<RulesPlanOut>("plan_rules", { folder, rules }),
+  ruleDestinations: (rules: Rule[]) => invoke<Destination[]>("rule_destinations", { rules }),
+  allowDestination: (path: string, create: boolean) => invoke<string>("allow_destination", { path, create }),
+  watchedFolders: () => invoke<Watched>("watched_folders"),
+  setWatchedFolders: (folders: string[]) => invoke<Watched>("set_watched_folders", { folders }),
+  ruleActivity: () => invoke<Activity[]>("rule_activity"),
+  updateInfo: () => invoke<UpdateInfo | null>("update_info"),
 };

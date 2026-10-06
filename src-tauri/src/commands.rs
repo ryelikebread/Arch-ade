@@ -2,10 +2,13 @@ use std::path::{Path, PathBuf};
 
 use arch_ade_core::dupes::{self, Candidate, DupeGroup};
 use arch_ade_core::journal::{Journal, PlanSummary, RunReport};
+use arch_ade_core::organize::{self, Activity, Organizer};
 use arch_ade_core::plan::{Plan, Planner};
 use arch_ade_core::preview::{self, Preview};
 use arch_ade_core::rename::{self, RenameOptions, RenameRow};
+use arch_ade_core::rules::{self, Rule, RuleMatch};
 use arch_ade_core::scan::{self, ScanOptions, ScanResult};
+use arch_ade_core::update::UpdateInfo;
 use arch_ade_core::{config, platform, watch, Error};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -23,7 +26,7 @@ where
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| Error::Other(e.to_string()))?
 }
 
-fn dry_run_on(s: &Shared) -> bool {
+pub(crate) fn dry_run_on(s: &Shared) -> bool {
     // Safety first: dry run is on unless the user turned it off.
     s.db.get_setting("dryRun").ok().flatten().and_then(|v| v.as_bool()).unwrap_or(true)
 }
@@ -110,6 +113,30 @@ pub fn add_destination(app: AppHandle, state: State<'_, Shared>, path: String) -
     let root = state.scope.add_root(Path::new(&path))?;
     allow_assets(&app, &root);
     Ok(root.to_string_lossy().into_owned())
+}
+
+/// A destination the user approved for rules: remembered across restarts.
+/// With `create`, a missing folder is made first (the user picked it).
+#[tauri::command]
+pub fn allow_destination(app: AppHandle, state: State<'_, Shared>, path: String, create: bool) -> Res<String> {
+    let p = PathBuf::from(&path);
+    if !p.is_absolute() {
+        return Err(Error::Other(format!("{path} is not a full path")));
+    }
+    if create && !p.exists() {
+        std::fs::create_dir_all(&p)?;
+    }
+    let root = add_destination(app, state.clone(), path)?;
+    let s = state.inner();
+    let mut saved: Vec<String> = crate::autorun::setting_paths(s, crate::autorun::DESTINATIONS_KEY)
+        .into_iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    if !saved.contains(&root) {
+        saved.push(root.clone());
+    }
+    s.db.set_setting(crate::autorun::DESTINATIONS_KEY, &serde_json::json!(saved))?;
+    Ok(root)
 }
 
 #[tauri::command]
@@ -229,13 +256,23 @@ pub async fn apply_plan(state: State<'_, Shared>, id: i64) -> Res<RunReport> {
     if dry_run_on(&s) {
         return Err(Error::Plan("Dry run is on: turn it off to apply changes.".into()));
     }
-    blocking(move || Journal::new(&s.db, &s.scope, platform::current()).apply(id)).await
+    blocking(move || {
+        let r = Journal::new(&s.db, &s.scope, platform::current()).apply(id)?;
+        quiet_after(&s, Some(&r));
+        Ok(r)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn undo(state: State<'_, Shared>) -> Res<Option<RunReport>> {
     let s = state.inner().clone();
-    blocking(move || Journal::new(&s.db, &s.scope, platform::current()).undo()).await
+    blocking(move || {
+        let r = Journal::new(&s.db, &s.scope, platform::current()).undo()?;
+        quiet_after(&s, r.as_ref());
+        Ok(r)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -244,7 +281,22 @@ pub async fn redo(state: State<'_, Shared>) -> Res<Option<RunReport>> {
     if dry_run_on(&s) {
         return Err(Error::Plan("Dry run is on: turn it off to redo changes.".into()));
     }
-    blocking(move || Journal::new(&s.db, &s.scope, platform::current()).redo()).await
+    blocking(move || {
+        let r = Journal::new(&s.db, &s.scope, platform::current()).redo()?;
+        quiet_after(&s, r.as_ref());
+        Ok(r)
+    })
+    .await
+}
+
+/// Tell the watcher that the paths a run touched came from Arch-ade, so an
+/// undo that puts a file back in Downloads isn't immediately re-sorted.
+fn quiet_after(s: &Shared, report: Option<&RunReport>) {
+    let Some(r) = report else { return };
+    if let Ok((plan, _)) = Journal::new(&s.db, &s.scope, platform::current()).load(r.plan_id) {
+        let paths = organize::produced_paths(&plan);
+        s.autopilot.lock().unwrap().produced(paths, std::time::Instant::now());
+    }
 }
 
 #[derive(Serialize)]
@@ -288,4 +340,123 @@ pub fn user_themes() -> Vec<serde_json::Value> {
         .filter_map(|e| std::fs::read_to_string(e.path()).ok())
         .filter_map(|t| serde_json::from_str(&t).ok())
         .collect()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RulesState {
+    rules: Vec<Rule>,
+    templates: Vec<Rule>,
+    tags_supported: bool,
+}
+
+#[tauri::command]
+pub fn rules_get(state: State<'_, Shared>) -> Res<RulesState> {
+    Ok(RulesState {
+        rules: rules::load(&state.db)?,
+        templates: rules::templates(),
+        tags_supported: platform::current().tags_supported(),
+    })
+}
+
+#[tauri::command]
+pub fn rules_save(state: State<'_, Shared>, rules: Vec<Rule>) -> Res<()> {
+    rules::save(&state.db, &rules)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RulesPlanOut {
+    #[serde(flatten)]
+    out: PlanOut,
+    matches: Vec<RuleMatch>,
+    rule_errors: Vec<String>,
+}
+
+/// What rules would do to the files directly in `folder` (the open folder
+/// when omitted). `rules` tests unsaved rules; otherwise the saved enabled
+/// ones run. Either way the result is a normal plan.
+#[tauri::command]
+pub async fn plan_rules(
+    state: State<'_, Shared>,
+    folder: Option<String>,
+    rules: Option<Vec<Rule>>,
+) -> Res<RulesPlanOut> {
+    let s = state.inner().clone();
+    let folder = match folder {
+        Some(f) => PathBuf::from(f),
+        None => s.root.lock().unwrap().clone().ok_or_else(|| Error::Other("no folder open".into()))?,
+    };
+    blocking(move || {
+        let rules = match rules {
+            Some(mut r) => {
+                r.iter_mut().for_each(|x| x.enabled = true);
+                r
+            }
+            None => rules::load(&s.db)?,
+        };
+        let org = Organizer { db: &s.db, scope: &s.scope, platform: platform::current(), places: &s.places };
+        let rp = org.plan(&rules, &folder, None, false)?;
+        Ok(RulesPlanOut { out: save(&s, rp.plan)?, matches: rp.matches, rule_errors: rp.rule_errors })
+    })
+    .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Destination {
+    rule_id: String,
+    path: String,
+    exists: bool,
+    allowed: bool,
+}
+
+/// Folders outside the opened/watched folders that rules move or copy into,
+/// so the UI can ask the user to allow (and create) them up front.
+#[tauri::command]
+pub fn rule_destinations(state: State<'_, Shared>, rules: Vec<Rule>) -> Vec<Destination> {
+    let mut out: Vec<Destination> = Vec::new();
+    for r in rules.iter().filter(|r| r.enabled) {
+        for p in r.fixed_destinations(&state.places) {
+            let path = p.to_string_lossy().into_owned();
+            if !out.iter().any(|d| d.path == path) {
+                let allowed = state.scope.check(&p.join("x")).is_ok();
+                out.push(Destination { rule_id: r.id.clone(), exists: p.is_dir(), allowed, path });
+            }
+        }
+    }
+    out
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Watched {
+    folders: Vec<String>,
+    pending: usize,
+}
+
+#[tauri::command]
+pub fn watched_folders(state: State<'_, Shared>) -> Watched {
+    let folders = state.watched.lock().unwrap().iter().map(|(p, _)| p.to_string_lossy().into_owned()).collect();
+    Watched { folders, pending: state.autopilot.lock().unwrap().pending_count() }
+}
+
+#[tauri::command]
+pub fn set_watched_folders(app: AppHandle, state: State<'_, Shared>, folders: Vec<String>) -> Res<Watched> {
+    let paths: Vec<PathBuf> = folders.iter().map(PathBuf::from).collect();
+    let canon = crate::autorun::set_watched(state.inner(), &paths)?;
+    for f in &canon {
+        allow_assets(&app, f);
+    }
+    Ok(watched_folders(state))
+}
+
+#[tauri::command]
+pub fn rule_activity(state: State<'_, Shared>) -> Res<Vec<Activity>> {
+    organize::recent_activity(&state.db, 200)
+}
+
+#[tauri::command]
+pub fn update_info(state: State<'_, Shared>) -> Option<UpdateInfo> {
+    state.update.clone()
 }

@@ -20,6 +20,12 @@ function describeOp(op: Op): [string, string] {
         : ["Move", `${op.from}\n→ ${op.to}`];
     case "trash":
       return ["Move to trash", op.path];
+    case "copy":
+      return ["Copy", `${op.from}\n→ ${op.to}`];
+    case "archive":
+      return ["Zip", `${op.from}\n→ ${op.to}`];
+    case "tag":
+      return ["Add tags", `${op.path}\n${op.tags.join(", ")}`];
   }
 }
 

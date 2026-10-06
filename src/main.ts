@@ -9,9 +9,12 @@ import { drawLogo } from "./pixel/logo";
 import { resetSprites } from "./pixel/sprites";
 import "./styles.css";
 import builtInThemes from "./themes";
-import type { AppInfo, FileEntry, Kind, PlanOut, RunReport, ScanOptions } from "./types";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { ActivityEvent, AppInfo, FileEntry, Kind, PlanOut, RunReport, ScanOptions, UpdateInfo } from "./types";
 import { dupesDialog, helpDialog, historyDialog, planReview, renameDialog, settingsDialog } from "./ui/dialogs";
-import { h } from "./ui/dom";
+import { h, modal } from "./ui/dom";
+import { rulesDialog } from "./ui/rules";
 import { PreviewPane } from "./ui/preview";
 import { FileTable } from "./ui/table";
 
@@ -54,6 +57,7 @@ const header = h(
   undoBtn,
   redoBtn,
   h("button", { onclick: () => historyDialog() }, "History"),
+  h("button", { onclick: () => openRules() }, "Rules"),
   dryBtn,
   h("button", { onclick: () => openSettings() }, "Settings"),
   h("button", { onclick: () => helpDialog(state.isMac) }, "Help"),
@@ -115,7 +119,8 @@ const table = new FileTable({
 const msg = h("span", { class: "msg" });
 const counts = h("span");
 const toolsEl = h("span");
-const footer = h("footer", {}, msg, counts, toolsEl);
+const updateEl = h("span", {});
+const footer = h("footer", {}, msg, updateEl, counts, toolsEl);
 
 document.getElementById("app")!.append(header, toolbar, h("main", {}, table.el, preview.el), footer);
 
@@ -253,6 +258,18 @@ listen("fs-changed", () => {
   fsTimer = window.setTimeout(rescan, 300);
 });
 
+// What the rules did on their own in a watched folder.
+listen<ActivityEvent>("rules-activity", (ev) => {
+  const a = ev.payload;
+  const where = a.folder.split(/[\\/]/).pop();
+  const undo = keyLabel("undo", state.isMac);
+  if (a.outcome === "applied") say(`Rules sorted ${a.files} new file(s) in ${where}. ${undo} undoes it.`);
+  else if (a.outcome === "dryRun") say(`Rules matched ${a.files} new file(s) in ${where} (dry run, nothing moved). See Rules > Activity.`);
+  else if (a.outcome === "failed") say(`Rules in ${where} stopped: ${a.error ?? "see Rules > Activity"}`, true);
+  else say(`Rules skipped ${a.files} new file(s) in ${where}. See Rules > Activity.`);
+  refreshJournal();
+});
+
 // ---------- operations ----------
 function afterRun(r: RunReport | null) {
   if (!r) return;
@@ -297,6 +314,10 @@ async function doMove() {
   } catch (e) {
     say(String(e), true);
   }
+}
+
+function openRules() {
+  rulesDialog({ root: state.root, review, say });
 }
 
 function doDupes() {
@@ -367,6 +388,7 @@ document.addEventListener("keydown", (ev) => {
     case "duplicates": return doDupes();
     case "search": return search.focus();
     case "history": return void historyDialog();
+    case "rules": return openRules();
     case "toggleDryRun": return toggleDryRun();
     case "help": return helpDialog(state.isMac);
     case "up": return table.move(-1, ev.shiftKey);
@@ -377,6 +399,31 @@ document.addEventListener("keydown", (ev) => {
       return;
   }
 });
+
+// ---------- updates (local stub; see crates/arch-ade-core/src/update.rs) ----------
+function showUpdate(u: UpdateInfo) {
+  const get = () => {
+    if (u.url) openUrl(u.url).catch((e) => say(String(e), true));
+  };
+  if (!u.required) {
+    updateEl.replaceChildren(
+      h("button", { title: u.notes || "A newer version is available", onclick: get, disabled: !u.url }, `Update ${u.version} available`),
+      h("button", { title: "Dismiss", onclick: () => updateEl.replaceChildren() }, "×"),
+    );
+    return;
+  }
+  // Required: the app stays blocked until the user updates or quits.
+  const download = h("button", { class: "primary", onclick: get, disabled: !u.url }, "Get the update");
+  const quit = h("button", { onclick: () => getCurrentWindow().close() }, "Quit");
+  const m = modal({
+    title: `Update ${u.version} required`,
+    content: h("div", {}, h("p", {}, "This version of Arch-ade can't be used any more. Please install the update."), u.notes ? h("p", { class: "note" }, u.notes) : null),
+    actions: [download, quit],
+    small: true,
+  });
+  m.dialog.querySelector(".actions > button:last-child")?.remove(); // no Close
+  m.dialog.addEventListener("cancel", (ev) => ev.preventDefault()); // Escape does nothing
+}
 
 // ---------- startup ----------
 async function boot() {
@@ -416,6 +463,8 @@ async function boot() {
     refreshJournal();
     refreshFilterOptions();
     refreshView();
+    const update = await api.updateInfo();
+    if (update) showUpdate(update);
     if (typeof s.lastFolder === "string") openRoot(s.lastFolder);
   } catch (e) {
     say(`Startup problem: ${e}`, true);

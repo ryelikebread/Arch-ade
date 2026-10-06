@@ -199,3 +199,32 @@ Cross-cutting
   within one millisecond).
 - macOS trash uses NSFileManager `trashItemAtURL:resultingItemURL:` directly, as planned;
   Windows and Linux use the `trash` crate's list/restore.
+
+## 9. Phase 2: rules, watched folders, protection, updates
+
+- `protect.rs`: a folder is a project root if it holds `.git`/`.hg`/`.svn`/`.jj`,
+  `package.json`, `Cargo.toml`, `pyproject.toml`, `go.mod`, `pom.xml`, `CMakeLists.txt`,
+  `project.godot`, a `.uproject`/`.sln`/`.csproj`/`.xcodeproj`/`.blend`, or Unity's
+  `Assets` + `ProjectSettings`. Scans mark it (`FileEntry.project`) and don't descend into
+  it; the planner refuses any op whose source or target is inside one. The opened folder
+  itself never counts, so a stray `package.json` in Downloads doesn't freeze Downloads, and
+  a whole project folder can still be moved by hand.
+- `rules.rs`: rules are JSON (`Rule`, `Test`, `RuleAction`), validated on save, stored under
+  the `rules` setting. `Engine::evaluate` checks top-level files only (no hidden files,
+  partial downloads or folders), first match wins, and turns actions into planner
+  `Intent`s. Templates live in `rule_templates.json`.
+- `plan.rs`: `Planner::build(&[Intent])` takes moves, copies, zips, tags and trashes and
+  orders them mkdir, tag, copy/zip, move, trash. New journal steps: Copy, Archive, Tag.
+  Undo of a copy or zip trashes the created file, only if its fingerprint is unchanged
+  (an edited copy is left alone); undo of a tag restores the previous raw tag value.
+- `organize.rs`: plans each file on its own first so a blocked file becomes a non-blocking
+  "skipped" note instead of blocking the run; records each match in `rule_activity`
+  (migration v2). On systems without tags, tag steps are dropped with a note.
+- `autopilot.rs`: settle logic for the watcher (3 s unchanged, no `.part`-style sibling,
+  give up after 6 h). Paths Arch-ade produced, by a rule run or by apply/undo/redo, are
+  ignored for 30 s so undoing a rule doesn't get re-sorted straight away.
+- `src-tauri/src/autorun.rs`: one non-recursive watcher per watched folder plus a 1 s loop
+  that hands settled files to `Organizer::auto_run` and emits `rules-activity`.
+- `update.rs`: `UpdateSource` trait; `ManifestFile` reads a local JSON file. No network.
+- Tags: macOS Finder tags (`com.apple.metadata:_kMDItemUserTags`, binary plist), Linux
+  `user.xdg.tags`; Windows has none. All behind the `Platform` trait.

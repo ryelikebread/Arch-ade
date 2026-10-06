@@ -12,7 +12,7 @@ const day = 86_400_000;
 function entry(name: string, over: Partial<FileEntry> = {}): FileEntry {
   return {
     path: `/r/${name}`, rel: name, name, ext: name.split(".").pop() ?? "", kind: "text", kindLabel: "Text",
-    isDir: false, isSymlink: false, size: 10, created: now - day, modified: now - day, added: null, source: null,
+    isDir: false, isSymlink: false, size: 10, created: now - day, modified: now - day, added: null, source: null, project: null,
     ...over,
   };
 }

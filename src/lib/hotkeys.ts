@@ -2,7 +2,7 @@
 
 export type Action =
   | "open" | "undo" | "redo" | "selectAll" | "rename" | "trash" | "move" | "duplicates" | "search"
-  | "help" | "history" | "up" | "down" | "toggleDryRun" | "escape";
+  | "help" | "history" | "up" | "down" | "toggleDryRun" | "escape" | "rules";
 
 export interface KeyLike {
   key: string;
@@ -35,6 +35,7 @@ export const BINDINGS: Binding[] = [
   { action: "search", key: "f", mod: true },
   { action: "history", key: "h", mod: true, shift: true },
   { action: "toggleDryRun", key: "t", mod: true, shift: true },
+  { action: "rules", key: "l", mod: true, shift: true },
   { action: "help", key: "F1" },
   { action: "help", key: "?", shift: true },
   { action: "up", key: "ArrowUp" },

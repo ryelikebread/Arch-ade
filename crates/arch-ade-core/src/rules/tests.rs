@@ -358,3 +358,22 @@ fn load_and_save_round_trip() {
     broken[0].enabled = false;
     save(&db, &broken).unwrap();
 }
+
+#[test]
+fn fixed_destinations_for_approval() {
+    let env = env(&[]);
+    let home = env.places.home.clone().unwrap();
+    let r = rule(serde_json::json!({
+        "id": "d", "name": "d", "conditions": [{"type": "kind", "kinds": ["pdf"]}],
+        "actions": [
+            {"type": "copy", "to": "{home}/Backup/{year}"},
+            {"type": "archive", "to": "Zips"},
+            {"type": "move", "to": "{home}/Work"}
+        ]
+    }));
+    assert_eq!(r.fixed_destinations(&env.places), vec![home.join("Backup"), home.join("Work")]);
+    let gh = templates().into_iter().find(|t| t.id == "route-github").unwrap();
+    assert_eq!(gh.fixed_destinations(&env.places), vec![home.join("Developer")]);
+    let local = templates().into_iter().find(|t| t.id == "downloads-pdfs").unwrap();
+    assert!(local.fixed_destinations(&env.places).is_empty());
+}

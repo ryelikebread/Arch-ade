@@ -138,3 +138,13 @@ dialog .actions .left { margin-right: auto; color: var(--dim); font-size: 12px; 
 .theme-swatch span { width: 10px; height: 10px; display: inline-block; }
 .menu { position: absolute; z-index: 20; padding: 4px; display: flex; flex-direction: column; min-width: 180px; }
 .menu button { text-align: left; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; user-select: text; }
+textarea.code { width: 100%; box-sizing: border-box; font: 12px ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: var(--bg); border: var(--px) solid var(--grid); padding: 6px; resize: vertical; }
+pre.code { font: 11px ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; background: var(--bg); padding: 8px; margin: 4px 0; }
+details summary { cursor: pointer; font-size: 12px; color: var(--accent); margin: 6px 0; }
+dialog .content .section { font: 11px var(--pixel-font); text-transform: uppercase; color: var(--accent); margin: 10px 0 4px; }
+dialog .content .section:first-child { margin-top: 0; }
+
+/* Rules list: short columns never wrap; the rule text takes the slack. */
+table.rules th, table.rules td { white-space: nowrap; }
+table.rules td:nth-child(3) { white-space: normal; width: 100%; }

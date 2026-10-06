@@ -174,3 +174,22 @@ fn rules_never_reach_into_project_folders() {
     assert!(e.root.join("Images/loose.png").exists());
     assert!(run.rules.matches.iter().all(|m| !m.path.ends_with("app/logo.png")));
 }
+
+#[test]
+fn tag_steps_are_skipped_where_tags_dont_exist() {
+    let e = env(&[("report.pdf", "R")]);
+    e.fake.no_tags.store(true, std::sync::atomic::Ordering::Relaxed);
+    let pl = places(&e);
+    let org = Organizer { db: &e.db, scope: &e.scope, platform: &e.fake, places: &pl };
+    let rules = vec![rule(serde_json::json!({
+    "id":"t","name":"t","enabled":true,
+    "conditions":[{"type":"kind","kinds":["pdf"]}],
+    "actions":[{"type":"tag","tags":["Work"]},{"type":"move","to":"PDFs"}]}))];
+    let rp = org.plan(&rules, &e.root, None, false).unwrap();
+    assert!(!rp.plan.is_blocked(), "{:?}", rp.plan.issues);
+    assert!(rp.plan.issues.iter().any(|i| i.message.contains("tag step skipped")));
+    let j = Journal::new(&e.db, &e.scope, &e.fake);
+    let r = j.apply(j.save(&rp.plan).unwrap()).unwrap();
+    assert_eq!(r.status, "applied", "{r:?}");
+    assert!(e.root.join("PDFs/report.pdf").exists(), "the move still happens");
+}

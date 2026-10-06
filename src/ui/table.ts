@@ -151,7 +151,12 @@ export class FileTable {
           title: e.rel,
         },
         h("div", {}, h("img", { src: kindIcon(e.kind), alt: "" })),
-        h("div", {}, e.rel.includes("/") ? e.rel : e.name),
+        h(
+          "div",
+          {},
+          e.rel.includes("/") ? e.rel : e.name,
+          e.project ? h("span", { class: "tag", title: `${e.project}: contents are protected from rules and moves` }, " project") : null,
+        ),
         h("div", { class: "num" }, e.isDir ? "" : formatSize(e.size)),
         h("div", { class: "muted" }, e.kindLabel),
         h("div", { class: "muted" }, formatDate(e.created)),

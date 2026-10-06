@@ -6,6 +6,18 @@
 4. **Change things** with Rename, Move or Trash. Every change is shown as a plan first.
 5. **Dry run** is on when you start. Plans are shown but nothing is changed. Turn it off in the header when you're happy with what you see.
 6. **Undo / Redo** work across everything you applied, even after restarting the app. History shows the full list.
+7. **Rules** (Cmd/Ctrl+Shift+L) sort files for you. Add a template such as *Organize Downloads*, tick **On**, and use **Run on open folder** to see the plan. Tick **Auto** and watch a folder (like Downloads) to run rules on new files once they finish downloading. **Activity** lists everything rules did.
+
+## Rule paths
+
+| Token | Means |
+| --- | --- |
+| `{home}`, `{downloads}`, `{desktop}`, `{documents}`, `{pictures}` | Your usual folders |
+| `{kind}`, `{ext}` | The file's kind (Image, PDF, …) and extension |
+| `{domain}`, `{app}` | Where it was downloaded from, and by which app |
+| `{year}`, `{month}`, `{day}` | The file's modified date |
+
+A plain name like `PDFs` means a folder inside the folder being organized.
 
 ## Rename patterns
 

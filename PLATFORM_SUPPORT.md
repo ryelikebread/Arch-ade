@@ -29,6 +29,15 @@ covered by CI tests and compile checks only so far).
 | rar / 7z / iso / nrg listing | Needs 7z or bsdtar (bsdtar ships with macOS) | Needs 7-Zip, or `tar.exe` (bsdtar) for some | Needs 7z or bsdtar |
 | Thumbnails for other types | Full (Quick Look) | Full (Shell) | Partial (freedesktop thumbnailers, ffmpegthumbnailer) |
 | Folder watcher | Full (FSEvents) | Full (ReadDirectoryChangesW) | Full (inotify; non-recursive by default) |
+| Watched folders running rules | Full | Full | Full (verified) |
+| Rules: kind, extension, size, age, name | Full | Full | Full (verified) |
+| Rules: source domain / URL | Full | Partial (needs Zone.Identifier) | Partial (needs `user.xdg.origin.url`; verified) |
+| Rules: downloading app | Full (quarantine agent) | Partial (guessed from domain) | Partial (guessed from domain) |
+| Rules: "added" age | Full (Date Added) | Partial (falls back to created, then modified) | Partial (falls back to created, then modified) |
+| Tag action | Full (Finder tags) | Unavailable (no tag system; rule step is skipped with a note) | Partial (`user.xdg.tags`; read by some file managers; not on filesystems without xattrs) |
+| Copy / zip actions with undo | Full | Full | Full (verified) |
+| Project-folder protection | Full | Full | Full (verified) |
+| Update notice (local manifest) | Full | Full | Full (verified) |
 | Hotkeys | Cmd | Ctrl | Ctrl |
 | Bundles | .dmg | .msi, NSIS .exe | AppImage, .deb |
 | Signing | Scripted, off until credentials | Scripted, off until credentials | n/a |

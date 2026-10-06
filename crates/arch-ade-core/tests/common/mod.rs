@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use arch_ade_core::db::Db;
@@ -18,6 +19,8 @@ pub struct FakeTrash {
     pub n: Mutex<u32>,
     /// Raw `user.xdg.tags`-style values by path.
     pub tags: Mutex<HashMap<PathBuf, Vec<u8>>>,
+    /// Act like Windows, which has no file tags.
+    pub no_tags: AtomicBool,
 }
 
 impl Platform for FakeTrash {
@@ -54,7 +57,7 @@ impl Platform for FakeTrash {
         vec![]
     }
     fn tags_supported(&self) -> bool {
-        true
+        !self.no_tags.load(Ordering::Relaxed)
     }
     fn read_tags(&self, path: &Path) -> Vec<String> {
         self.tags.lock().unwrap().get(path).map(|r| arch_ade_core::tags::xdg_names(r)).unwrap_or_default()
@@ -102,7 +105,12 @@ pub fn env(files: &[(&str, &str)]) -> Env {
         root,
         scope,
         db: Db::open_in_memory().unwrap(),
-        fake: FakeTrash { dir: trash, n: Mutex::new(0), tags: Mutex::new(HashMap::new()) },
+        fake: FakeTrash {
+            dir: trash,
+            n: Mutex::new(0),
+            tags: Mutex::new(HashMap::new()),
+            no_tags: AtomicBool::new(false),
+        },
     }
 }
 

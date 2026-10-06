@@ -12,3 +12,9 @@
 - Windows: trash restore now matches Recycle Bin entries to our paths without the `\\?\` prefix and ignoring case. Why: undoing a trash on Windows failed with "no longer in the trash".
 - Windows: trash restore also matches Recycle Bin names shown without their extension, and the real-trash test prints what the trash holds when it fails. Why: Explorer hides known extensions in display names, so undo still could not find trashed files.
 - Windows: undoing a trash restores the file under its real name. Why: the Recycle Bin display name can drop the extension, and restoring by it brought `photo.jpg` back as `photo`.
+- Phase 2: JSON rules (type, source domain/URL, app, size, age, name regex → move, copy, rename, tag, trash, zip) with five built-in templates, a Rules screen and an Activity log. Why: let Arch-ade sort files the way the user decides, still as reviewed, undoable plans.
+- Phase 2: watched folders run Auto rules on files once they finish downloading; dry run still applies. Why: hands-off sorting of Downloads/Desktop.
+- Phase 2: project folders (Git, Node, Rust, Unity, Unreal, Godot, Blender, …) are never scanned into or changed. Why: moving files inside a project breaks it.
+- Phase 2: copy, zip and tag steps join the journal with undo (copies/zips go to the trash, tags are restored). Why: every rule action must be undoable.
+- Phase 2: update-notice stub reading a local manifest, with an optional (status bar) and a required (blocking) flow. Why: hook for a future updater without any network code.
+- Phase 2: apply, undo and redo mark the touched paths so watched folders don't re-sort a file you just put back; tag steps are skipped with a note on Windows. Why: found while testing; undo was being undone by the watcher, and a tag would have stopped the whole plan on Windows.

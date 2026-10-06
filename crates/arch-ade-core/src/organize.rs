@@ -66,6 +66,15 @@ impl Organizer<'_> {
         let mut skipped: Vec<Issue> = Vec::new();
         let mut by_file: Vec<(PathBuf, Vec<Intent>)> = Vec::new();
         for i in ev.intents {
+            // No tag system here (Windows): drop the tag step, keep the rest.
+            if matches!(i.action, crate::plan::Action::Tag(_)) && !self.platform.tags_supported() {
+                skipped.push(Issue {
+                    path: i.path,
+                    message: "tag step skipped: file tags are not available on this system".into(),
+                    blocking: false,
+                });
+                continue;
+            }
             match by_file.last_mut() {
                 Some((p, v)) if *p == i.path => v.push(i),
                 _ => by_file.push((i.path.clone(), vec![i])),
