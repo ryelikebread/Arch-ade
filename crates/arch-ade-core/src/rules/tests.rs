@@ -130,7 +130,10 @@ fn first_match_wins_and_routing_needs_a_destination_root() {
     let ev = engine(&env).evaluate(&rules, &env.root, &files);
     let m = |n: &str| ev.matches.iter().find(|m| m.path.ends_with(n)).unwrap();
     assert_eq!(m("repo-main.zip").rule_id, "route-github");
-    assert_eq!(m("repo-main.zip").destination, Some(env.places.home.clone().unwrap().join("Developer/repo-main.zip")));
+    assert_eq!(
+        m("repo-main.zip").destination,
+        Some(env.places.home.clone().unwrap().join("Developer").join("repo-main.zip"))
+    );
     assert_eq!(m("other.zip").rule_id, "downloads-archives");
 
     // ~/Developer isn't a chosen destination yet, so the plan refuses it.
@@ -330,7 +333,7 @@ fn destinations_resolve_safely() {
     assert!(p.resolve("{documents}/x", &env.root, &none).unwrap_err().contains("no documents folder"));
     assert!(p.resolve("{nope}", &env.root, &none).is_err());
     let fill = |k: &str| (k == "domain").then(|| "evil/../x".to_string());
-    assert_eq!(p.resolve("By site/{domain}", &env.root, &fill).unwrap(), env.root.join("By site/evil-..-x"));
+    assert_eq!(p.resolve("By site/{domain}", &env.root, &fill).unwrap(), env.root.join("By site").join("evil-..-x"));
 }
 
 #[test]

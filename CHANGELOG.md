@@ -18,3 +18,4 @@
 - Phase 2: copy, zip and tag steps join the journal with undo (copies/zips go to the trash, tags are restored). Why: every rule action must be undoable.
 - Phase 2: update-notice stub reading a local manifest, with an optional (status bar) and a required (blocking) flow. Why: hook for a future updater without any network code.
 - Phase 2: apply, undo and redo mark the touched paths so watched folders don't re-sort a file you just put back; tag steps are skipped with a note on Windows. Why: found while testing; undo was being undone by the watcher, and a tag would have stopped the whole plan on Windows.
+- Rules: destination paths like `{home}/Work` are now built segment by segment with the OS separator. Why: on Windows the mixed `/` produced paths that didn't match (and `\\\\?\\` paths don't accept `/`), failing CI.

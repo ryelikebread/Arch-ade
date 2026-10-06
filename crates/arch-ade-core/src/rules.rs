@@ -329,30 +329,44 @@ impl Places {
     /// Resolve a rule path: a leading `{home}`-style token, an absolute path,
     /// or a path relative to `base`. Other tokens are filled by `fill`.
     pub fn resolve(&self, text: &str, base: &Path, fill: &dyn Fn(&str) -> Option<String>) -> Result<PathBuf, String> {
+        let mut place: Option<PathBuf> = None;
         let mut out = String::new();
         let mut rest = text;
         while let Some(open) = rest.find('{') {
             out.push_str(&rest[..open]);
             let close = rest[open..].find('}').ok_or_else(|| format!("unclosed {{ in {text:?}"))? + open;
             let key = &rest[open + 1..close];
-            let value = if let Some(p) = self.get(key) {
-                if open != 0 || !out.is_empty() {
+            if let Some(p) = self.get(key) {
+                if place.is_some() || !out.is_empty() {
                     return Err(format!("{{{key}}} must come first in {text:?}"));
                 }
-                p.to_string_lossy().into_owned()
+                place = Some(p.to_path_buf());
             } else if let Some(v) = fill(key) {
                 // Values from file metadata become one safe path segment.
-                v.replace(['/', '\\', ':'], "-")
+                out.push_str(&v.replace(['/', '\\', ':'], "-"));
             } else if self.is_place(key) {
                 return Err(format!("this system has no {key} folder"));
             } else {
                 return Err(format!("unknown token {{{key}}} in {text:?}"));
-            };
-            out.push_str(&value);
+            }
             rest = &rest[close + 1..];
         }
         out.push_str(rest);
-        let p = PathBuf::from(&out);
+        let p = match place {
+            // Push the rest segment by segment so the OS separator is used
+            // (Windows `\\?\` paths don't accept `/`).
+            Some(mut p) => {
+                for seg in out.split(['/', '\\']).filter(|s| !s.is_empty() && *s != ".") {
+                    if seg == ".." {
+                        return Err(format!("{text:?} may not go up a folder with .."));
+                    }
+                    p.push(seg);
+                }
+                p
+            }
+            // Rebuilding from components normalizes `/` to `\\` on Windows.
+            None => PathBuf::from(&out).components().collect(),
+        };
         if p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
             return Err(format!("{text:?} may not go up a folder with .."));
         }
