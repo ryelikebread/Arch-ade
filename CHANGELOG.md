@@ -9,3 +9,4 @@
 - CI: replaced `chunks_exact` with `as_chunks` in UTF-16 decoding and Windows thumbnails. Why: Rust 1.99 clippy rejects the old form under `-D warnings`.
 - CI/Windows: libheif comes from vcpkg (`libheif[core]`, decoder only) on MSVC. Why: libheif-sys only links vcpkg's build on Windows, it can't build its embedded copy there.
 - Windows: OS thumbnails now ask for real thumbnails only (`SIIGBF_THUMBNAILONLY`). Why: Windows otherwise returned the generic file-type icon for unreadable files, which the preview showed as if it were the content.
+- Windows: trash restore now matches Recycle Bin entries to our paths without the `\\?\` prefix and ignoring case. Why: undoing a trash on Windows failed with "no longer in the trash".

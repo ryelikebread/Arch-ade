@@ -179,11 +179,48 @@ fn trash_via_crate(path: &Path) -> Result<TrashReceipt> {
         .and_then(|items| {
             items
                 .into_iter()
-                .filter(|i| i.original_path() == path && i.time_deleted >= before - 5)
+                .filter(|i| same_trash_path(&i.original_path(), path) && i.time_deleted >= before - 5)
                 .max_by_key(|i| i.time_deleted)
         })
         .map(|i| i.id.to_string_lossy().into_owned());
     Ok(TrashReceipt { original: path.to_path_buf(), token })
+}
+
+/// The trash lists plain paths (`C:\x`) while ours are canonical, which on
+/// Windows means verbatim (`\\?\C:\x`). Compare them without that prefix,
+/// and ignore case on Windows where the filesystem does.
+#[cfg(any(windows, target_os = "linux"))]
+fn same_trash_path(listed: &Path, ours: &Path) -> bool {
+    fn plain(p: &Path) -> std::borrow::Cow<'_, str> {
+        let s = p.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            format!(r"\\{rest}").into()
+        } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+            rest.to_owned().into()
+        } else {
+            s
+        }
+    }
+    let (a, b) = (plain(listed), plain(ours));
+    if cfg!(windows) {
+        a.to_lowercase() == b.to_lowercase()
+    } else {
+        a == b
+    }
+}
+
+#[cfg(all(test, any(windows, target_os = "linux")))]
+mod trash_path_tests {
+    use super::same_trash_path;
+    use std::path::Path;
+
+    #[test]
+    fn verbatim_prefix_is_ignored() {
+        assert!(same_trash_path(Path::new(r"C:\Users\a\f.txt"), Path::new(r"\\?\C:\Users\a\f.txt")));
+        assert!(same_trash_path(Path::new(r"\\srv\share\f"), Path::new(r"\\?\UNC\srv\share\f")));
+        assert!(same_trash_path(Path::new("/home/a/f"), Path::new("/home/a/f")));
+        assert!(!same_trash_path(Path::new("/home/a/f"), Path::new("/home/a/g")));
+    }
 }
 
 #[cfg(any(windows, target_os = "linux"))]
@@ -193,7 +230,7 @@ fn restore_via_crate(r: &TrashReceipt) -> Result<()> {
         .into_iter()
         .filter(|i| match &r.token {
             Some(t) => i.id.to_string_lossy() == t.as_str(),
-            None => i.original_path() == r.original,
+            None => same_trash_path(&i.original_path(), &r.original),
         })
         .max_by_key(|i| i.time_deleted)
         .ok_or_else(|| crate::Error::NotFound(format!("{} is no longer in the trash", r.original.display())))?;
