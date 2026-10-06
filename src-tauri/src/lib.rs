@@ -1,6 +1,7 @@
 //! Tauri glue: app state and IPC commands. No business logic lives here;
 //! every command validates input and calls into `arch_ade_core`.
 
+mod ai_commands;
 mod autorun;
 mod commands;
 
@@ -86,6 +87,14 @@ pub fn run() {
             commands::set_watched_folders,
             commands::rule_activity,
             commands::update_info,
+            ai_commands::ai_state,
+            ai_commands::ai_save_settings,
+            ai_commands::ai_save_whitelists,
+            ai_commands::ai_forget,
+            ai_commands::ai_models,
+            ai_commands::ai_suggest,
+            ai_commands::ai_cancel,
+            ai_commands::ai_plan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Arch-ade");

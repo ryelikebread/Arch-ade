@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  Activity, AppInfo, Destination, DupeGroup, PlanOut, PlanSummary, Preview, RenameOptions, RenameRow, Rule, RulesPlanOut,
+  Activity, AiSettings, AiState, AppInfo, Approved, ModelInfo, SuggestOut, Whitelist, Destination, DupeGroup, PlanOut, PlanSummary, Preview, RenameOptions, RenameRow, Rule, RulesPlanOut,
   RulesState, RunReport, ScanOptions, ScanResult, UpdateInfo, Watched,
 } from "./types";
 
@@ -35,4 +35,13 @@ export const api = {
   setWatchedFolders: (folders: string[]) => invoke<Watched>("set_watched_folders", { folders }),
   ruleActivity: () => invoke<Activity[]>("rule_activity"),
   updateInfo: () => invoke<UpdateInfo | null>("update_info"),
+  aiState: () => invoke<AiState>("ai_state"),
+  aiSaveSettings: (settings: AiSettings) => invoke<void>("ai_save_settings", { settings }),
+  aiSaveWhitelists: (whitelists: Whitelist[]) => invoke<void>("ai_save_whitelists", { whitelists }),
+  aiForget: () => invoke<void>("ai_forget"),
+  aiModels: (url: string) => invoke<ModelInfo[]>("ai_models", { url }),
+  /** Streams `ai-progress` events while it runs. */
+  aiSuggest: (paths: string[], settings: AiSettings) => invoke<SuggestOut>("ai_suggest", { paths, settings }),
+  aiCancel: () => invoke<void>("ai_cancel"),
+  aiPlan: (items: Approved[], whitelistId: string, dest?: string) => invoke<PlanOut>("ai_plan", { items, dest, whitelistId }),
 };

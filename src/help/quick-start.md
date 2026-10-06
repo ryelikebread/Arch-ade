@@ -7,6 +7,7 @@
 5. **Dry run** is on when you start. Plans are shown but nothing is changed. Turn it off in the header when you're happy with what you see.
 6. **Undo / Redo** work across everything you applied, even after restarting the app. History shows the full list.
 7. **Rules** (Cmd/Ctrl+Shift+L) sort files for you. Add a template such as *Organize Downloads*, tick **On**, and use **Run on open folder** to see the plan. Tick **Auto** and watch a folder (like Downloads) to run rules on new files once they finish downloading. **Activity** lists everything rules did.
+8. **Categorize** (Cmd/Ctrl+Shift+K) suggests a folder and a clean name for each selected file. Edit or untick suggestions, then **Review plan**. It works without AI (music/video tags, your past choices, and simple keyword rules); turn on the local AI in **Settings > Local AI and categories** for smarter suggestions.
 
 ## Rule paths
 

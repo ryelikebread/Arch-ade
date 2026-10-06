@@ -3,6 +3,7 @@
 //! OS-specific behaviour lives only in [`platform`]; the rest of the crate is
 //! written once and behaves identically on macOS, Windows and Linux.
 
+pub mod ai;
 pub mod autopilot;
 pub mod config;
 pub mod db;

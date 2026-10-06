@@ -2,6 +2,9 @@
 
 ## 2026-10-06
 
+- Phase 3: Categorize (Cmd/Ctrl+Shift+K) suggests a category, subcategory and name per file and builds a reviewed, journaled plan; works fully with the AI off (media tags, past decisions, whitelist keywords). Why: sort and name files by content, still nothing changes without review.
+- Phase 3: optional local AI through Ollama on localhost only (text model plus vision model, default gemma3:4b, alternate llava:7b), screenshot handling, More Refined / More Consistent modes, rename-only. Why: smarter suggestions without anything leaving the machine.
+- Phase 3: named category whitelists with per-category subcategories in Settings, and approved decisions stored in SQLite (recorded only once applied) and reused as hints. Why: consistent folders that follow the user's own past choices, no fine-tuning.
 - Phase 1: core crate with a `Platform` trait (macOS/Windows/Linux), per-OS name rules, scope guard, folder scan with download source (macOS xattrs, Windows Zone.Identifier, Linux xdg xattrs). Why: the foundation every later phase needs.
 - Phase 1: dry-run plans, SQLite operation journal with undo/redo and crash detection, OS trash with restore, mass rename with `{n:03}`/`{date}`/`{original}`/`{ext}` and live preview, duplicate finder (size, partial hash, BLAKE3). Why: safe, undoable file changes.
 - Phase 1: previews for images (incl. TIFF, bundled-libheif HEIC, RAW via exiftool, OS thumbnails), PDF (pdf.js), text/Markdown/JSON/CSV/HTML (sandboxed), docx/xlsx, .gdoc, audio/video, archive listings; metadata-only for disk images and installers. Why: browse without opening other apps.

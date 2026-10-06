@@ -27,7 +27,13 @@ pub fn preview(path: &Path, md: &std::fs::Metadata, k: Kind, ctx: &Ctx, p: &mut 
 
 /// Container/stream summary from ffprobe (cached).
 fn probe(path: &Path, md: &std::fs::Metadata, ctx: &Ctx) -> Vec<(String, String)> {
-    let Some(ffprobe) = ctx.tools.ffprobe.as_ref() else { return vec![] };
+    probe_json(path, md, ctx).map(|j| summarize(&j)).unwrap_or_default()
+}
+
+/// ffprobe's JSON for a file (cached by path, mtime and size); `None`
+/// without ffprobe.
+pub fn probe_json(path: &Path, md: &std::fs::Metadata, ctx: &Ctx) -> Option<serde_json::Value> {
+    let ffprobe = ctx.tools.ffprobe.as_ref()?;
     let key = path.to_string_lossy();
     let json = match ctx.db.get_meta(&key, "ffprobe", mtime_secs(md), md.len()) {
         Ok(Some(v)) => v,
@@ -41,7 +47,7 @@ fn probe(path: &Path, md: &std::fs::Metadata, ctx: &Ctx) -> Vec<(String, String)
             v
         }
     };
-    summarize(&json)
+    Some(json)
 }
 
 pub fn summarize(json: &serde_json::Value) -> Vec<(String, String)> {

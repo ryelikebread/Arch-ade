@@ -89,6 +89,15 @@ pub fn parse_where_froms(bytes: &[u8]) -> Vec<String> {
     }
 }
 
+/// A boolean stored as a plist (e.g. `kMDItemIsScreenCapture`).
+pub fn plist_bool(bytes: &[u8]) -> Option<bool> {
+    match plist::Value::from_reader(std::io::Cursor::new(bytes)).ok()? {
+        plist::Value::Boolean(b) => Some(b),
+        plist::Value::Integer(i) => i.as_signed().map(|n| n != 0),
+        _ => None,
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Quarantine {
     pub timestamp: Option<i64>,

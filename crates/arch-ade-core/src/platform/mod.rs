@@ -72,6 +72,12 @@ pub trait Platform: Send + Sync {
     /// don't inherit the shell's PATH, so Homebrew must be probed explicitly).
     fn extra_tool_dirs(&self) -> Vec<PathBuf>;
 
+    /// Whether the OS marked this image as a screenshot, where it records that
+    /// (macOS). `None` means unknown; callers then fall back to heuristics.
+    fn is_screen_capture(&self, _path: &Path) -> Option<bool> {
+        None
+    }
+
     /// Whether files can carry tags that the OS file manager shows.
     fn tags_supported(&self) -> bool {
         false

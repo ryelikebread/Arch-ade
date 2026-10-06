@@ -7,8 +7,9 @@ TypeScript, SQLite for state). Nothing leaves the machine.
 > Working name. The display name lives in `crates/arch-ade-core/src/config.rs`
 > (`APP_NAME`) plus `productName`/`identifier` in `src-tauri/tauri.conf.json`.
 
-**Status:** Phase 2 (Phase 1's browser, previews, journal, dry run, rename and
-duplicates, plus rules, watched folders, project-folder protection and an update notice). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+**Status:** Phase 3 (Phase 1's browser, previews, journal, dry run, rename and
+duplicates; Phase 2's rules, watched folders, project-folder protection and update notice;
+plus categorize-and-rename with an optional local AI). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [PLATFORM_SUPPORT.md](PLATFORM_SUPPORT.md).
 
 ## Safety model
@@ -44,9 +45,10 @@ Prerequisites:
 - Any OS: build with `--no-default-features` to skip HEIC entirely
 
 Optional helpers, detected at startup (the status bar lists what was found):
-`ffmpeg`/`ffprobe` (media details, video poster frames), `exiftool` (photo metadata, RAW
-previews), `7z` or `bsdtar` (rar/7z/iso listings), `ffmpegthumbnailer` (Linux video
-thumbnails). macOS uses Quick Look and Windows the Shell thumbnailer automatically.
+`ffmpeg`/`ffprobe` (media details, video poster frames, music/video tags for naming),
+`exiftool` (photo metadata, RAW previews), `7z` or `bsdtar` (rar/7z/iso listings),
+`ffmpegthumbnailer` (Linux video thumbnails), `pdftotext` from Poppler (PDF text for
+categorizing). Ollama for the optional local AI, see below. macOS uses Quick Look and Windows the Shell thumbnailer automatically.
 
 ## Run
 
@@ -104,6 +106,52 @@ stopped changing for 3 seconds and no `.part`/`.crdownload` sibling is left. Eve
 journaled plan (undoable), dry run still applies (runs are only logged), and everything lands
 in **Rules > Activity**. Files Arch-ade itself just moved, or put back with Undo, are ignored
 so nothing loops.
+
+## Categorize (local AI optional)
+
+**Categorize** (Cmd/Ctrl+Shift+K) suggests a category, subcategory and clean name for the
+selected files (or all visible files). Nothing changes until you review the suggestions,
+edit or untick any of them, and click **Review plan**: that builds a normal plan (folders to
+create, files to move or rename) that goes through dry run and the journal like everything
+else, so it is undoable.
+
+Where a suggestion comes from, in order:
+
+1. **Tags** for music and video (needs `ffprobe`): `Artist - Album - 01 - Title`,
+   `Artist - Title`, `Show - S01E02 - Title` (into Videos/TV), `Title (1999)` (into Videos/Movies).
+2. **The local AI**, when it's on: a text model reads the name and a short excerpt
+   (text, Markdown, docx, xlsx, PDF via `pdftotext`); a vision model looks at images.
+   Screenshots are flagged (macOS's own screenshot marker, otherwise the name or an exact
+   screen size) and named after what's on screen.
+3. **Past decisions**: a similar file you approved before.
+4. **The whitelist**: kind, extension and keywords in the name.
+
+So it works fully with the AI off; the AI just reads contents instead of only names.
+
+**Local AI setup.** Install [Ollama](https://ollama.com), then pull the default model
+(it handles text and images):
+
+```sh
+ollama pull gemma3:4b
+# optional alternate vision model
+ollama pull llava:7b
+```
+
+In **Settings > Local AI and categories**, tick *Use local AI*, click **Test connection**, and pick models.
+Arch-ade only talks to Ollama on this machine (`localhost`/`127.0.0.1`/`::1`; other
+addresses are refused, no proxy, no redirects). No model is trained: approved decisions are
+stored in SQLite and shown to the model as examples next time. **Forget … learned decisions**
+clears them.
+
+**Modes.** *More Consistent* (default) only uses the whitelist's categories and
+subcategories, answers deterministically, and lets a strong past decision win.
+*More Refined* may propose a new subcategory under a known category (marked *new*, with a
+**+ whitelist** button to keep it). **Rename only** keeps files where they are and only
+suggests names.
+
+**Category whitelists** (Settings > Local AI and categories > Manage category whitelists) are named lists
+of categories, each with its own subcategories and optional kinds, extensions and keywords
+used when guessing without AI. Two built-ins: *General* and *Simple*; **Duplicate** one to edit it.
 
 ## Update notice
 

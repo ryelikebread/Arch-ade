@@ -1,0 +1,74 @@
+[
+  {
+    "id": "general",
+    "name": "General",
+    "fallback": "Other",
+    "categories": [
+      {
+        "name": "Documents",
+        "description": "letters, reports, forms, notes, spreadsheets",
+        "kinds": ["pdf", "docx", "xlsx", "csv", "text", "markdown", "gdoc"],
+        "subcategories": [
+          { "name": "Finance", "keywords": ["invoice", "receipt", "statement", "tax", "bank", "payslip", "bill", "budget"] },
+          { "name": "Work", "keywords": ["meeting", "report", "proposal", "contract", "agenda", "minutes", "slides"] },
+          { "name": "School", "keywords": ["lecture", "assignment", "homework", "syllabus", "exam", "thesis", "course"] },
+          { "name": "Manuals", "keywords": ["manual", "guide", "instructions", "datasheet", "handbook"] },
+          { "name": "Personal", "keywords": ["resume", "cv", "passport", "letter", "certificate", "insurance"] }
+        ]
+      },
+      {
+        "name": "Images",
+        "description": "photos, screenshots, graphics",
+        "kinds": ["image", "rawImage", "heic", "vector"],
+        "subcategories": [
+          { "name": "Screenshots", "keywords": ["screenshot", "screen shot", "screen capture", "cleanshot", "snip"] },
+          { "name": "Photos", "keywords": ["img", "dsc", "photo", "pxl", "dcim"] },
+          { "name": "Graphics", "keywords": ["logo", "icon", "banner", "design", "mockup", "illustration"] },
+          { "name": "Memes", "keywords": ["meme"] }
+        ]
+      },
+      {
+        "name": "Music",
+        "description": "songs and albums",
+        "kinds": ["audio"],
+        "subcategories": [
+          { "name": "Podcasts", "keywords": ["podcast", "episode"] },
+          { "name": "Recordings", "keywords": ["recording", "voice memo", "memo"] }
+        ]
+      },
+      {
+        "name": "Videos",
+        "description": "movies, shows, clips",
+        "kinds": ["video"],
+        "subcategories": [
+          { "name": "Movies", "keywords": ["movie", "film"] },
+          { "name": "TV", "keywords": ["episode", "season"] },
+          { "name": "Screen Recordings", "keywords": ["screen recording"] },
+          { "name": "Clips", "keywords": ["clip"] }
+        ]
+      },
+      {
+        "name": "Code",
+        "description": "source files and scripts",
+        "extensions": ["rs", "py", "js", "mjs", "ts", "tsx", "jsx", "c", "h", "cpp", "hpp", "cc", "cs", "java", "kt", "go", "rb", "php", "swift", "m", "sh", "ps1", "lua", "sql", "ipynb", "gd", "glsl", "hlsl"]
+      },
+      { "name": "Archives", "description": "zip, tar, 7z and similar", "kinds": ["archive"] },
+      { "name": "Installers", "description": "apps, installers, disk images", "kinds": ["installer", "diskImage"] },
+      { "name": "Other", "description": "anything else" }
+    ]
+  },
+  {
+    "id": "simple",
+    "name": "Simple (no subfolders)",
+    "fallback": "Other",
+    "categories": [
+      { "name": "Documents", "kinds": ["pdf", "docx", "xlsx", "csv", "text", "markdown", "gdoc"] },
+      { "name": "Images", "kinds": ["image", "rawImage", "heic", "vector"] },
+      { "name": "Audio", "kinds": ["audio"] },
+      { "name": "Video", "kinds": ["video"] },
+      { "name": "Archives", "kinds": ["archive"] },
+      { "name": "Installers", "kinds": ["installer", "diskImage"] },
+      { "name": "Other" }
+    ]
+  }
+]

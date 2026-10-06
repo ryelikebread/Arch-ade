@@ -15,10 +15,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::Shared;
 
-type Res<T> = Result<T, Error>;
+pub(crate) type Res<T> = Result<T, Error>;
 
 /// Run blocking core work off the async runtime's worker threads.
-async fn blocking<T, F>(f: F) -> Res<T>
+pub(crate) async fn blocking<T, F>(f: F) -> Res<T>
 where
     T: Send + 'static,
     F: FnOnce() -> Res<T> + Send + 'static,
@@ -208,12 +208,12 @@ pub fn rename_preview(state: State<'_, Shared>, paths: Vec<String>, options: Ren
 #[serde(rename_all = "camelCase")]
 pub struct PlanOut {
     /// None when the plan has blocking issues (it can't be applied).
-    id: Option<i64>,
-    plan: Plan,
-    dry_run: bool,
+    pub(crate) id: Option<i64>,
+    pub(crate) plan: Plan,
+    pub(crate) dry_run: bool,
 }
 
-fn save(state: &Shared, plan: Plan) -> Res<PlanOut> {
+pub(crate) fn save(state: &Shared, plan: Plan) -> Res<PlanOut> {
     let id = if plan.is_blocked() || plan.ops.is_empty() {
         None
     } else {
@@ -259,6 +259,12 @@ pub async fn apply_plan(state: State<'_, Shared>, id: i64) -> Res<RunReport> {
     blocking(move || {
         let r = Journal::new(&s.db, &s.scope, platform::current()).apply(id)?;
         quiet_after(&s, Some(&r));
+        if r.status == "applied" {
+            // Categorize plans: the approved decisions become hints now.
+            if let Err(e) = arch_ade_core::ai::review::commit_pending(&s.db, id) {
+                tracing::warn!("remembering decisions for plan {id}: {e}");
+            }
+        }
         Ok(r)
     })
     .await

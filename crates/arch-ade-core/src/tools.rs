@@ -27,6 +27,8 @@ pub struct Tools {
     pub sevenzip: Option<PathBuf>,
     pub qlmanage: Option<PathBuf>,
     pub ffmpegthumbnailer: Option<PathBuf>,
+    /// Poppler's pdftotext, for reading PDFs during AI categorization.
+    pub pdftotext: Option<PathBuf>,
 }
 
 impl Tools {
@@ -41,6 +43,7 @@ impl Tools {
             sevenzip: f(&["7zz", "7z", "7za"]),
             qlmanage: f(&["qlmanage"]),
             ffmpegthumbnailer: f(&["ffmpegthumbnailer"]),
+            pdftotext: f(&["pdftotext"]),
         }
     }
 }

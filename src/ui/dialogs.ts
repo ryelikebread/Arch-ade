@@ -246,10 +246,12 @@ export function helpDialog(isMac: boolean) {
   modal({ title: "Help", content: h("div", {}, bar, body) });
 }
 
-export function settingsDialog(themes: Theme[], current: string, onTheme: (t: Theme) => void, dataDir: string) {
+export function settingsDialog(themes: Theme[], current: string, onTheme: (t: Theme) => void, dataDir: string, onAi: () => void) {
   const content = h(
     "div",
     {},
+    h("div", { class: "head" }, "Local AI and categories"),
+    h("div", { class: "form-row" }, h("button", { onclick: onAi }, "AI settings and category whitelists…")),
     h("div", { class: "head" }, "Color scheme"),
     ...themes.map((t) =>
       h(

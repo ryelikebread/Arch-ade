@@ -14,6 +14,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ActivityEvent, AppInfo, FileEntry, Kind, PlanOut, RunReport, ScanOptions, UpdateInfo } from "./types";
 import { dupesDialog, helpDialog, historyDialog, planReview, renameDialog, settingsDialog } from "./ui/dialogs";
 import { h, modal } from "./ui/dom";
+import { aiSettingsDialog, categorizeDialog } from "./ui/ai";
 import { rulesDialog } from "./ui/rules";
 import { PreviewPane } from "./ui/preview";
 import { FileTable } from "./ui/table";
@@ -85,12 +86,13 @@ const renameBtn = h("button", { disabled: true, onclick: () => doRename() }, "Re
 const moveBtn = h("button", { disabled: true, onclick: () => doMove() }, "Move");
 const trashBtn = h("button", { class: "danger", disabled: true, onclick: () => doTrash() }, "Trash");
 const dupesBtn = h("button", { disabled: true, onclick: () => doDupes() }, "Duplicates");
+const sortBtn = h("button", { disabled: true, title: "Suggest categories and names (local AI optional)", onclick: () => doCategorize() }, "Categorize");
 const selInfo = h("span", { class: "note" });
 const toolbar = h(
   "div",
   { class: "toolbar" },
   search, kindSelect, sourceSelect, sizeSelect, ageField, agePreset,
-  h("div", { class: "actions" }, selInfo, renameBtn, moveBtn, trashBtn, dupesBtn),
+  h("div", { class: "actions" }, selInfo, renameBtn, moveBtn, trashBtn, sortBtn, dupesBtn),
 );
 
 const preview = new PreviewPane();
@@ -188,7 +190,7 @@ function refreshView() {
   table.setRows(state.view, state.sortKey, state.asc);
   const bytes = state.view.reduce((s, e) => s + e.size, 0);
   counts.textContent = state.root ? `${state.view.length} of ${state.entries.length} items · ${formatSize(bytes)}` : "";
-  dupesBtn.disabled = !state.view.some((e) => !e.isDir);
+  dupesBtn.disabled = sortBtn.disabled = !state.view.some((e) => !e.isDir);
 }
 
 for (const el of [kindSelect, sourceSelect, sizeSelect, ageField, agePreset]) el.addEventListener("change", refreshView);
@@ -316,6 +318,13 @@ async function doMove() {
   }
 }
 
+/** Selected files, or every visible file when nothing is selected. */
+function doCategorize() {
+  if (!state.root) return;
+  const sel = table.selectedEntries();
+  categorizeDialog({ root: state.root, entries: sel.length ? sel : state.view, review, say });
+}
+
 function openRules() {
   rulesDialog({ root: state.root, review, say });
 }
@@ -366,7 +375,7 @@ function setTheme(t: Theme) {
 }
 
 function openSettings() {
-  settingsDialog(state.themes, state.themeId, setTheme, state.info?.dataDir ?? "");
+  settingsDialog(state.themes, state.themeId, setTheme, state.info?.dataDir ?? "", () => aiSettingsDialog(say));
 }
 
 // ---------- keyboard ----------
@@ -389,6 +398,7 @@ document.addEventListener("keydown", (ev) => {
     case "search": return search.focus();
     case "history": return void historyDialog();
     case "rules": return openRules();
+    case "categorize": return doCategorize();
     case "toggleDryRun": return toggleDryRun();
     case "help": return helpDialog(state.isMac);
     case "up": return table.move(-1, ev.shiftKey);

@@ -4,9 +4,9 @@
 
 mod archive;
 mod image;
-mod media;
-mod office;
-mod text;
+pub mod media;
+pub(crate) mod office;
+pub(crate) mod text;
 
 use std::path::Path;
 

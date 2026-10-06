@@ -228,3 +228,28 @@ Cross-cutting
 - `update.rs`: `UpdateSource` trait; `ManifestFile` reads a local JSON file. No network.
 - Tags: macOS Finder tags (`com.apple.metadata:_kMDItemUserTags`, binary plist), Linux
   `user.xdg.tags`; Windows has none. All behind the `Platform` trait.
+
+## 10. Phase 3: categorize and rename, local AI optional
+
+- `ai/ollama.rs`: `Llm` trait plus an Ollama client (ureq, no TLS feature, no proxy, no
+  redirects). URLs must be loopback. `/api/chat` with `stream: false` and a JSON-schema
+  `format`, so replies are always parseable; `/api/tags` for Test connection.
+- `ai/whitelist.rs`: named whitelists (built-ins in `whitelists.json`, user copies in the
+  `categoryWhitelists` setting), validated against every OS's folder-name rules. `guess` picks a
+  category from keywords, then extension, then kind, then the fallback.
+- `ai/hints.rs`: `ai_decisions` (migration v3). Similarity = shared words (from both the old
+  and the approved name), same source domain, same extension or kind; one hint per
+  destination. Hints become few-shot examples; a strong one (score ≥ 6) is used directly
+  in Consistent mode or with the AI off.
+- `ai/media.rs`: library names from ffprobe format/stream tags.
+- `ai/facts.rs`: what the model sees: name, kind, source domain, a text excerpt (≤ 3000
+  chars), an image downscaled to ≤ 896 px JPEG, and the screenshot flag
+  (`Platform::is_screen_capture`, macOS `kMDItemIsScreenCapture`; elsewhere heuristics).
+- `ai/suggest.rs`: order is media tags, AI, hint, whitelist guess. Consistent: temperature
+  0, fixed seed, category and subcategory are schema enums. Refined: temperature 0.4, new
+  subcategories allowed under known categories. Rename-only drops categories from the schema.
+- `ai/review.rs`: approved items become planner intents (mkdir + move/rename, `(2)` on
+  clashes, unplannable items are "skipped" notes). Decisions wait in `ai_pending` and are
+  recorded only once that plan is actually applied.
+- `src-tauri/src/ai_commands.rs`: `ai_suggest` runs on a worker, streams `ai-progress`, can
+  be cancelled, and checks Ollama once up front (falls back with a reason if it's down).

@@ -38,6 +38,11 @@ covered by CI tests and compile checks only so far).
 | Copy / zip actions with undo | Full | Full | Full (verified) |
 | Project-folder protection | Full | Full | Full (verified) |
 | Update notice (local manifest) | Full | Full | Full (verified) |
+| Categorize + review (AI off: tags, past decisions, whitelist) | Full | Full | Full (verified) |
+| Local AI via Ollama (HTTP to localhost) | Full | Full | Full (verified against a mock server only; real models untested so far) |
+| Screenshot detection | Full (macOS screenshot marker, then heuristics) | Partial (name and screen-size heuristics) | Partial (name and screen-size heuristics; verified) |
+| PDF text for categorizing | Needs pdftotext (Poppler) | Needs pdftotext (Poppler) | Needs pdftotext (verified) |
+| Music/video names from tags | Needs ffprobe | Needs ffprobe | Needs ffprobe (verified) |
 | Hotkeys | Cmd | Ctrl | Ctrl |
 | Bundles | .dmg | .msi, NSIS .exe | AppImage, .deb |
 | Signing | Scripted, off until credentials | Scripted, off until credentials | n/a |

@@ -142,6 +142,7 @@ export interface Tools {
   sevenzip: string | null;
   qlmanage: string | null;
   ffmpegthumbnailer: string | null;
+  pdftotext: string | null;
 }
 
 export interface AppInfo {
@@ -251,4 +252,91 @@ export interface UpdateInfo {
   required: boolean;
   notes: string;
   url: string | null;
+}
+
+// ---------- Phase 3: local AI categorization ----------
+
+export type AiMode = "refined" | "consistent";
+
+export interface AiSettings {
+  enabled: boolean;
+  url: string;
+  textModel: string;
+  visionModel: string;
+  mode: AiMode;
+  renameOnly: boolean;
+  analyzeImages: boolean;
+  whitelistId: string;
+}
+
+export interface Subcategory {
+  name: string;
+  keywords: string[];
+}
+
+export interface Category {
+  name: string;
+  description: string;
+  subcategories: Subcategory[];
+  kinds: Kind[];
+  extensions: string[];
+  keywords: string[];
+}
+
+export interface Whitelist {
+  id: string;
+  name: string;
+  categories: Category[];
+  fallback: string;
+}
+
+export interface AiState {
+  settings: AiSettings;
+  whitelists: Whitelist[];
+  decisions: number;
+  pdftotext: boolean;
+  ffprobe: boolean;
+}
+
+export type SuggestionSource = "ai" | "hint" | "media" | "guess";
+
+export interface Suggestion {
+  path: string;
+  name: string;
+  kind: Kind;
+  category: string;
+  subcategory: string;
+  newName: string;
+  source: SuggestionSource;
+  reason: string;
+  newSubcategory: boolean;
+  screenshot: boolean;
+  warning: string | null;
+  domain: string | null;
+}
+
+export interface SuggestOut {
+  suggestions: Suggestion[];
+  aiError: string | null;
+  cancelled: boolean;
+}
+
+export interface AiProgress {
+  done: number;
+  total: number;
+  suggestion: Suggestion | null;
+}
+
+export interface Approved {
+  path: string;
+  category: string;
+  subcategory: string;
+  newName: string;
+  source: string;
+  domain: string | null;
+}
+
+export interface ModelInfo {
+  name: string;
+  size: number;
 }

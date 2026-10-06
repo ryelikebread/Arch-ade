@@ -125,6 +125,22 @@ pub fn docx_paragraphs(xml: &str) -> Result<(Vec<String>, bool)> {
     Ok((paras, false))
 }
 
+/// Plain text of a .docx, paragraphs separated by newlines.
+pub(crate) fn docx_text(path: &Path) -> Option<String> {
+    let xml = zip_member(path, "word/document.xml").ok()?;
+    Some(docx_paragraphs(&xml).ok()?.0.join("\n"))
+}
+
+/// The first rows of the first sheet, tab-separated.
+pub(crate) fn xlsx_text(path: &Path, rows: usize) -> Option<String> {
+    match xlsx(path).ok()? {
+        Body::Table { rows: table, .. } => {
+            Some(table.iter().take(rows).map(|r| r.join("\t")).collect::<Vec<_>>().join("\n"))
+        }
+        _ => None,
+    }
+}
+
 /// First sheet as a table, plus the list of sheet names.
 pub fn xlsx(path: &Path) -> Result<Body> {
     use calamine::Reader;

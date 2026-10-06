@@ -43,6 +43,15 @@ pub fn preview(path: &Path, syntax: &'static str) -> crate::Result<Body> {
     Ok(Body::Text { text: decode(&buf), truncated, syntax })
 }
 
+/// Up to `limit` bytes of a file as text, or `None` if it looks binary.
+pub(crate) fn text_prefix(path: &Path, limit: usize) -> Option<String> {
+    let (buf, _) = read_prefix(path, limit).ok()?;
+    if buf.is_empty() || looks_binary(&buf) {
+        return None;
+    }
+    Some(decode(&buf))
+}
+
 /// Unknown extension: show it as text if it looks like text.
 pub fn sniff_text(path: &Path) -> crate::Result<Body> {
     let (buf, _) = read_prefix(path, 8192)?;

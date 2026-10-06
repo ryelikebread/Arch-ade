@@ -59,6 +59,23 @@ const MIGRATIONS: &[&str] = &[
         message TEXT);
     CREATE INDEX rule_activity_at ON rule_activity(at);
     "#,
+    // v3: approved AI/category decisions, reused as hints.
+    r#"
+    CREATE TABLE ai_decisions (
+        id INTEGER PRIMARY KEY,
+        at INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        ext TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        domain TEXT,
+        category TEXT NOT NULL,
+        subcategory TEXT NOT NULL,
+        new_name TEXT NOT NULL,
+        source TEXT NOT NULL,
+        whitelist_id TEXT NOT NULL);
+    CREATE INDEX ai_decisions_list ON ai_decisions(whitelist_id, id);
+    CREATE TABLE ai_pending (plan_id INTEGER PRIMARY KEY REFERENCES plans(id), decisions TEXT NOT NULL);
+    "#,
 ];
 
 pub struct Db {

@@ -35,3 +35,15 @@ Yes. Files you put back with Undo aren't sorted again straight away. They'll onl
 
 ## Does Arch-ade check for updates?
 Not over the internet. It only reads an optional local file, `update-manifest.json`, in its app-data folder.
+
+## Do I need the AI for Categorize?
+No. Without it, music and video are named from their tags, files similar to ones you sorted before follow your earlier choice, and the rest are sorted by kind and keywords. The AI adds reading the text and looking at images.
+
+## Does the AI send my files anywhere?
+No. Arch-ade only talks to Ollama running on your own computer and refuses any other address. Install Ollama and run `ollama pull gemma3:4b` to use it.
+
+## Does Arch-ade learn from my choices?
+Yes, without training anything. When you apply a categorize plan, each approved choice is saved and shown to the AI as an example next time (and used directly for very similar files). **Settings > Local AI and categories > Forget learned decisions** clears them.
+
+## What's the difference between More Refined and More Consistent?
+*Consistent* always picks from your whitelist and gives the same answer for the same file. *Refined* may suggest a new subcategory when nothing fits; you can add it to the whitelist from the suggestion.

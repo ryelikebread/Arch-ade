@@ -63,6 +63,13 @@ impl Platform for Mac {
         added_time(path)
     }
 
+    fn is_screen_capture(&self, path: &Path) -> Option<bool> {
+        let raw = xattr::get(path, "com.apple.metadata:kMDItemIsScreenCapture").ok().flatten();
+        // macOS screenshots carry the attribute. Its absence proves nothing
+        // (other capture tools don't set it), so that stays "unknown".
+        raw.and_then(|r| crate::source::plist_bool(&r)).filter(|b| *b)
+    }
+
     fn tags_supported(&self) -> bool {
         true
     }

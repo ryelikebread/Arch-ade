@@ -148,3 +148,9 @@ dialog .content .section:first-child { margin-top: 0; }
 /* Rules list: short columns never wrap; the rule text takes the slack. */
 table.rules th, table.rules td { white-space: nowrap; }
 table.rules td:nth-child(3) { white-space: normal; width: 100%; }
+
+/* Categorize review */
+table.ai-review td { vertical-align: top; }
+table.ai-review input[type="text"] { width: 100%; min-width: 14em; }
+table.ai-review td:nth-child(2) { max-width: 18em; overflow-wrap: anywhere; }
+button.link { background: none; border: none; box-shadow: none; text-decoration: underline; padding: 0 4px; }
