@@ -274,7 +274,39 @@ fn real_os_trash_roundtrip() {
     assert_eq!(j.apply(id).unwrap().status, "applied");
     assert!(!file.exists());
     let r = j.undo().unwrap().unwrap();
-    assert_eq!(r.status, "undone", "{r:?}");
+    assert_eq!(
+        r.status,
+        "undone",
+        "{r:?}\nreceipt: {:?}\ntrash entries named trash-me.txt: {}",
+        receipt(&db),
+        trash_listing()
+    );
     assert_eq!(read(&file), "bye");
     std::fs::remove_dir_all(&base).unwrap();
+}
+
+fn receipt(db: &Db) -> Option<String> {
+    db.conn().query_row("SELECT receipt FROM ops WHERE kind = 'trash'", [], |r| r.get(0)).ok().flatten()
+}
+
+/// What the OS trash holds for the test file, to explain a failed restore.
+#[cfg(any(windows, target_os = "linux"))]
+fn trash_listing() -> String {
+    match trash::os_limited::list() {
+        Ok(items) => {
+            let total = items.len();
+            let hits: Vec<_> = items
+                .iter()
+                .filter(|i| i.name.to_string_lossy().contains("trash-me"))
+                .map(|i| format!("{:?} from {:?} at {}", i.id, i.original_parent, i.time_deleted))
+                .collect();
+            format!("{hits:?} (of {total} items)")
+        }
+        Err(e) => format!("list failed: {e}"),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn trash_listing() -> String {
+    String::new()
 }

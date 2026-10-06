@@ -179,7 +179,7 @@ fn trash_via_crate(path: &Path) -> Result<TrashReceipt> {
         .and_then(|items| {
             items
                 .into_iter()
-                .filter(|i| same_trash_path(&i.original_path(), path) && i.time_deleted >= before - 5)
+                .filter(|i| is_trash_entry_for(i, path) && i.time_deleted >= before - 5)
                 .max_by_key(|i| i.time_deleted)
         })
         .map(|i| i.id.to_string_lossy().into_owned());
@@ -189,6 +189,19 @@ fn trash_via_crate(path: &Path) -> Result<TrashReceipt> {
 /// The trash lists plain paths (`C:\x`) while ours are canonical, which on
 /// Windows means verbatim (`\\?\C:\x`). Compare them without that prefix,
 /// and ignore case on Windows where the filesystem does.
+/// Whether a trash entry is the item that used to live at `ours`.
+#[cfg(any(windows, target_os = "linux"))]
+fn is_trash_entry_for(item: &trash::TrashItem, ours: &Path) -> bool {
+    let (Some(parent), Some(name)) = (ours.parent(), ours.file_name()) else { return false };
+    let listed = item.name.to_string_lossy();
+    // Windows lists the shell display name, which drops known extensions
+    // when Explorer hides them ("photo" for "photo.jpg").
+    let stem = ours.file_stem().unwrap_or(name);
+    let name_matches = same_trash_path(Path::new(&*listed), Path::new(name))
+        || (cfg!(windows) && ours.extension().is_some() && same_trash_path(Path::new(&*listed), Path::new(stem)));
+    name_matches && same_trash_path(&item.original_parent, parent)
+}
+
 #[cfg(any(windows, target_os = "linux"))]
 fn same_trash_path(listed: &Path, ours: &Path) -> bool {
     fn plain(p: &Path) -> std::borrow::Cow<'_, str> {
@@ -221,6 +234,21 @@ mod trash_path_tests {
         assert!(same_trash_path(Path::new("/home/a/f"), Path::new("/home/a/f")));
         assert!(!same_trash_path(Path::new("/home/a/f"), Path::new("/home/a/g")));
     }
+
+    fn item(parent: &str, name: &str) -> trash::TrashItem {
+        trash::TrashItem { id: "x".into(), name: name.into(), original_parent: parent.into(), time_deleted: 0 }
+    }
+
+    #[test]
+    fn entries_match_by_parent_and_name() {
+        use super::is_trash_entry_for;
+        assert!(is_trash_entry_for(&item("/home/a", "f.txt"), Path::new("/home/a/f.txt")));
+        assert!(!is_trash_entry_for(&item("/home/b", "f.txt"), Path::new("/home/a/f.txt")));
+        assert!(!is_trash_entry_for(&item("/home/a", "g.txt"), Path::new("/home/a/f.txt")));
+        // Explorer hides known extensions in the Recycle Bin's display names.
+        let hidden_ext = is_trash_entry_for(&item(r"C:\Users\a", "f"), Path::new(r"\\?\C:\Users\a\f.txt"));
+        assert_eq!(hidden_ext, cfg!(windows));
+    }
 }
 
 #[cfg(any(windows, target_os = "linux"))]
@@ -230,7 +258,7 @@ fn restore_via_crate(r: &TrashReceipt) -> Result<()> {
         .into_iter()
         .filter(|i| match &r.token {
             Some(t) => i.id.to_string_lossy() == t.as_str(),
-            None => same_trash_path(&i.original_path(), &r.original),
+            None => is_trash_entry_for(i, &r.original),
         })
         .max_by_key(|i| i.time_deleted)
         .ok_or_else(|| crate::Error::NotFound(format!("{} is no longer in the trash", r.original.display())))?;
