@@ -32,11 +32,13 @@ Prerequisites:
 
 - Rust (stable) and Node 22+
 - macOS: Xcode Command Line Tools
-- Windows: Microsoft C++ Build Tools, WebView2 (preinstalled on Windows 11)
+- Windows: Microsoft C++ Build Tools, WebView2 (preinstalled on Windows 11), and libheif from
+  [vcpkg](https://vcpkg.io): `vcpkg install "libheif[core]:x64-windows-static-md"` with `VCPKG_ROOT` set
+  (on Windows the HEIC decoder links vcpkg's libheif instead of building it)
 - Linux (Debian/Ubuntu):
   `sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev`
-- `cmake` and a C++ compiler for the bundled HEIC decoder (or build with
-  `--no-default-features` to skip HEIC)
+- macOS/Linux: `cmake` and a C++ compiler for the bundled HEIC decoder
+- Any OS: build with `--no-default-features` to skip HEIC entirely
 
 Optional helpers, detected at startup (the status bar lists what was found):
 `ffmpeg`/`ffprobe` (media details, video poster frames), `exiftool` (photo metadata, RAW
