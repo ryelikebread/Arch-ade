@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  Activity, AiSettings, AiState, AppInfo, Approved, ModelInfo, SuggestOut, Whitelist, Destination, DupeGroup, PlanOut, PlanSummary, Preview, RenameOptions, RenameRow, Rule, RulesPlanOut,
+  Activity, AiSettings, Decision, AiState, AppInfo, Approved, ModelInfo, SuggestOut, Whitelist, Destination, DupeGroup, PlanOut, PlanSummary, Preview, RenameOptions, RenameRow, Rule, RulesPlanOut,
   RulesState, RunReport, ScanOptions, ScanResult, UpdateInfo, Watched,
 } from "./types";
 
@@ -20,7 +20,7 @@ export const api = {
   applyPlan: (id: number) => invoke<RunReport>("apply_plan", { id }),
   undo: () => invoke<RunReport | null>("undo"),
   redo: () => invoke<RunReport | null>("redo"),
-  journalState: () => invoke<{ canUndo: boolean; canRedo: boolean }>("journal_state"),
+  journalState: () => invoke<{ canUndo: boolean; canRedo: boolean; undoPlanId: number | null }>("journal_state"),
   history: () => invoke<PlanSummary[]>("history"),
   getSettings: () => invoke<Record<string, unknown>>("get_settings"),
   setSetting: (key: string, value: unknown) => invoke<void>("set_setting", { key, value }),
@@ -44,4 +44,7 @@ export const api = {
   aiSuggest: (paths: string[], settings: AiSettings) => invoke<SuggestOut>("ai_suggest", { paths, settings }),
   aiCancel: () => invoke<void>("ai_cancel"),
   aiPlan: (items: Approved[], whitelistId: string, dest?: string) => invoke<PlanOut>("ai_plan", { items, dest, whitelistId }),
+  planOne: (path: string, decision: Decision) => invoke<PlanOut>("plan_one", { path, decision }),
+  fbfFolders: () => invoke<string[]>("fbf_folders"),
+  userSkins: () => invoke<{ folder: string; manifest: unknown; sheet: string }[]>("user_skins"),
 };

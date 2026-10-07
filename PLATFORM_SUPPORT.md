@@ -43,6 +43,9 @@ covered by CI tests and compile checks only so far).
 | Screenshot detection | Full (macOS screenshot marker, then heuristics) | Partial (name and screen-size heuristics) | Partial (name and screen-size heuristics; verified) |
 | PDF text for categorizing | Needs pdftotext (Poppler) | Needs pdftotext (Poppler) | Needs pdftotext (verified) |
 | Music/video names from tags | Needs ffprobe | Needs ffprobe | Needs ffprobe (verified) |
+| File by File (keep/move/rename/trash, undo, quick-pick) | Full | Full | Full (verified) |
+| Delete permanently (confirmed, files only) | Full | Full | Full (verified) |
+| Skins (canvas, 30fps cap, paused when hidden) | Full | Full | Full (verified; WebKitGTK, software rendering in CI) |
 | Hotkeys | Cmd | Ctrl | Ctrl |
 | Bundles | .dmg | .msi, NSIS .exe | AppImage, .deb |
 | Signing | Scripted, off until credentials | Scripted, off until credentials | n/a |

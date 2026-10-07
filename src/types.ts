@@ -76,7 +76,8 @@ export type Op =
   | { type: "trash"; path: string }
   | { type: "copy"; from: string; to: string }
   | { type: "archive"; from: string; to: string }
-  | { type: "tag"; path: string; tags: string[] };
+  | { type: "tag"; path: string; tags: string[] }
+  | { type: "delete"; path: string };
 
 export interface Plan {
   label: string;
@@ -340,3 +341,10 @@ export interface ModelInfo {
   name: string;
   size: number;
 }
+
+/** One File-by-File decision, planned by `plan_one`. */
+export type Decision =
+  | { type: "move"; dest: string }
+  | { type: "rename"; name: string }
+  | { type: "trash" }
+  | { type: "delete" };

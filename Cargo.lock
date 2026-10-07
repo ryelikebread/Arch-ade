@@ -52,6 +52,7 @@ name = "arch-ade"
 version = "0.1.0"
 dependencies = [
  "arch-ade-core",
+ "base64 0.23.1",
  "dirs",
  "serde",
  "serde_json",

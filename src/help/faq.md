@@ -47,3 +47,12 @@ Yes, without training anything. When you apply a categorize plan, each approved 
 
 ## What's the difference between More Refined and More Consistent?
 *Consistent* always picks from your whitelist and gives the same answer for the same file. *Refined* may suggest a new subcategory when nothing fits; you can add it to the whitelist from the suggestion.
+
+## Can File by File decisions be undone?
+Yes, one at a time with Cmd/Ctrl+Z, newest first, except **Delete permanently**. That one skips the trash, so it asks first and can't be undone; Undo moves on to the decision before it.
+
+## Do the skins slow anything down?
+Minimal (the default) draws nothing. Volcano and Space draw a small pixel scene, at most 30 frames per second while an animation plays and a few per second otherwise, and stop completely while the window is hidden.
+
+## Can I make my own skin?
+Yes. A skin is a PNG sprite sheet plus a `manifest.json` in a folder under `skins` in the app-data folder (shown in Settings). See `docs/SKINS.md` in the source for the format. A broken skin is skipped with a note saying why.

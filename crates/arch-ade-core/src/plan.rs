@@ -38,6 +38,11 @@ pub enum Op {
         path: PathBuf,
         tags: Vec<String>,
     },
+    /// Delete a file for good (File-by-File's "delete permanently", after the
+    /// user confirms). The only op that can't be undone.
+    Delete {
+        path: PathBuf,
+    },
 }
 
 /// Size + modification time captured at plan time. If either changed by the
@@ -143,6 +148,30 @@ impl<'a> Planner<'a> {
         }
         for p in kept {
             plan.ops.push(PlannedOp { expect: Fingerprint::of(&p), op: Op::Trash { path: p } });
+        }
+        plan
+    }
+
+    /// Delete one file permanently. Folders are refused: only a single file,
+    /// looked at in File-by-File mode, can be deleted this way.
+    pub fn delete(&self, path: &Path, label: impl Into<String>) -> Plan {
+        let mut plan = Plan { label: label.into(), ..Default::default() };
+        let p = match self.scope.check(path) {
+            Ok(p) => p,
+            Err(e) => {
+                plan.issue(path, e.to_string(), true);
+                return plan;
+            }
+        };
+        match std::fs::symlink_metadata(&p) {
+            Err(_) => plan.issue(path, "file no longer exists", true),
+            Ok(md) if md.is_dir() => {
+                plan.issue(path, "only files can be deleted permanently; use Trash for folders", true)
+            }
+            Ok(_) => match self.protected(&p) {
+                Some(why) => plan.issue(path, why, true),
+                None => plan.ops.push(PlannedOp { expect: Fingerprint::of(&p), op: Op::Delete { path: p } }),
+            },
         }
         plan
     }
@@ -314,6 +343,37 @@ impl<'a> Planner<'a> {
         }
         plan
     }
+}
+
+/// A free path for `name` in `dir`, adding " (2)", " (3)", … before the
+/// extension when the name is taken on disk or by an earlier claim in
+/// `taken`. `src` itself (or a case-only variant of it) counts as free.
+pub fn free_target(
+    rules: NameRules,
+    dir: &Path,
+    name: &str,
+    src: &Path,
+    taken: &mut HashSet<(PathBuf, String)>,
+) -> Option<PathBuf> {
+    let (stem, ext) = crate::rename::split_name(name);
+    for i in 1..1000 {
+        let candidate = match (i, ext.is_empty()) {
+            (1, _) => name.to_string(),
+            (_, true) => format!("{stem} ({i})"),
+            (_, false) => format!("{stem} ({i}).{ext}"),
+        };
+        let key = (dir.to_path_buf(), names::fold_key(rules, &candidate));
+        let path = dir.join(&candidate);
+        let is_self = path == src;
+        let self_case = src.parent() == Some(dir)
+            && src.file_name().is_some_and(|n| names::collide(rules, &n.to_string_lossy(), &candidate));
+        let free = !taken.contains(&key) && (is_self || self_case || std::fs::symlink_metadata(&path).is_err());
+        if free {
+            taken.insert(key);
+            return Some(path);
+        }
+    }
+    None
 }
 
 /// One thing to do to one file, before planning. The planner checks scope,

@@ -26,6 +26,8 @@ function describeOp(op: Op): [string, string] {
       return ["Zip", `${op.from}\n→ ${op.to}`];
     case "tag":
       return ["Add tags", `${op.path}\n${op.tags.join(", ")}`];
+    case "delete":
+      return ["Delete permanently", op.path];
   }
 }
 
@@ -60,7 +62,9 @@ export function planReview(out: PlanOut, onDone: (r: RunReport) => void, onToggl
   const apply = h("button", { class: "primary", disabled: out.id == null || out.dryRun }, "Apply");
   const left = out.dryRun
     ? h("span", {}, "Dry run is on: nothing will change. ", h("button", { onclick: () => { m.close(); onToggleDryRun(); } }, "Turn off"))
-    : `${plan.ops.length} step(s). Everything is undoable.`;
+    : plan.ops.some((o) => o.type === "delete")
+      ? `${plan.ops.length} step(s). A permanent delete can't be undone.`
+      : `${plan.ops.length} step(s). Everything is undoable.`;
   const m = modal({ title: plan.label, content, actions: [apply], left });
   apply.addEventListener("click", async () => {
     if (out.id == null) return;
@@ -217,7 +221,8 @@ export async function historyDialog() {
         h("tr", {}, h("th", {}, "When"), h("th", {}, "What"), h("th", {}, "Steps"), h("th", {}, "State")),
         ...list.map((p) =>
           h("tr", {}, h("td", {}, formatDate(p.appliedAt ?? p.created)), h("td", {}, p.label), h("td", {}, String(p.opCount)),
-            h("td", { class: p.status === "applied" ? "status-ok" : p.status === "undone" ? "status-same" : "status-bad" }, p.status)),
+            h("td", { class: p.status === "applied" || p.status === "final" ? "status-ok" : p.status === "undone" ? "status-same" : "status-bad" },
+              p.status === "final" ? "done (can't be undone)" : p.status)),
         ),
       )
     : h("p", { class: "note" }, "No changes yet.");

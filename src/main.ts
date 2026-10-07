@@ -15,6 +15,7 @@ import type { ActivityEvent, AppInfo, FileEntry, Kind, PlanOut, RunReport, ScanO
 import { dupesDialog, helpDialog, historyDialog, planReview, renameDialog, settingsDialog } from "./ui/dialogs";
 import { h, modal } from "./ui/dom";
 import { aiSettingsDialog, categorizeDialog } from "./ui/ai";
+import { fileByFile } from "./ui/fbf";
 import { rulesDialog } from "./ui/rules";
 import { PreviewPane } from "./ui/preview";
 import { FileTable } from "./ui/table";
@@ -87,12 +88,13 @@ const moveBtn = h("button", { disabled: true, onclick: () => doMove() }, "Move")
 const trashBtn = h("button", { class: "danger", disabled: true, onclick: () => doTrash() }, "Trash");
 const dupesBtn = h("button", { disabled: true, onclick: () => doDupes() }, "Duplicates");
 const sortBtn = h("button", { disabled: true, title: "Suggest categories and names (local AI optional)", onclick: () => doCategorize() }, "Categorize");
+const fbfBtn = h("button", { disabled: true, title: "Go through files one at a time", onclick: () => doFileByFile() }, "File by File");
 const selInfo = h("span", { class: "note" });
 const toolbar = h(
   "div",
   { class: "toolbar" },
   search, kindSelect, sourceSelect, sizeSelect, ageField, agePreset,
-  h("div", { class: "actions" }, selInfo, renameBtn, moveBtn, trashBtn, sortBtn, dupesBtn),
+  h("div", { class: "actions" }, selInfo, renameBtn, moveBtn, trashBtn, fbfBtn, sortBtn, dupesBtn),
 );
 
 const preview = new PreviewPane();
@@ -190,7 +192,7 @@ function refreshView() {
   table.setRows(state.view, state.sortKey, state.asc);
   const bytes = state.view.reduce((s, e) => s + e.size, 0);
   counts.textContent = state.root ? `${state.view.length} of ${state.entries.length} items · ${formatSize(bytes)}` : "";
-  dupesBtn.disabled = sortBtn.disabled = !state.view.some((e) => !e.isDir);
+  dupesBtn.disabled = sortBtn.disabled = fbfBtn.disabled = !state.view.some((e) => !e.isDir);
 }
 
 for (const el of [kindSelect, sourceSelect, sizeSelect, ageField, agePreset]) el.addEventListener("change", refreshView);
@@ -325,6 +327,25 @@ function doCategorize() {
   categorizeDialog({ root: state.root, entries: sel.length ? sel : state.view, review, say });
 }
 
+/** Selected files (or every visible file), one at a time, in table order. */
+function doFileByFile() {
+  if (!state.root) return;
+  const sel = table.selectedEntries();
+  const picked = new Set(sel.map((e) => e.path));
+  const entries = sel.length ? state.view.filter((e) => picked.has(e.path)) : state.view;
+  fileByFile({
+    entries,
+    root: state.root,
+    isMac: state.isMac,
+    dryRun: state.dryRun,
+    onChanged: () => {
+      refreshJournal();
+      rescan();
+    },
+    onClose: () => table.focus(),
+  }).catch((e) => say(String(e), true));
+}
+
 function openRules() {
   rulesDialog({ root: state.root, review, say });
 }
@@ -399,6 +420,7 @@ document.addEventListener("keydown", (ev) => {
     case "history": return void historyDialog();
     case "rules": return openRules();
     case "categorize": return doCategorize();
+    case "fileByFile": return doFileByFile();
     case "toggleDryRun": return toggleDryRun();
     case "help": return helpDialog(state.isMac);
     case "up": return table.move(-1, ev.shiftKey);

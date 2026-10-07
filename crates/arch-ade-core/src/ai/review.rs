@@ -73,7 +73,7 @@ pub fn plan(scope: &Scope, rules: NameRules, dest_root: &Path, whitelist_id: &st
             }
             d
         };
-        let Some(target) = claim(rules, &dir, &a.new_name, &src, &mut taken) else {
+        let Some(target) = crate::plan::free_target(rules, &dir, &a.new_name, &src, &mut taken) else {
             skip(&mut notes, format!("no free name for {} in {}", a.new_name, dir.display()));
             continue;
         };
@@ -105,37 +105,6 @@ pub fn plan(scope: &Scope, rules: NameRules, dest_root: &Path, whitelist_id: &st
     let mut plan = planner.build(&keep, format!("Categorize {} file(s)", keep.len()));
     plan.issues.extend(notes);
     ReviewPlan { plan, decisions }
-}
-
-/// `name` in `dir`, or "name (2).ext" etc. if taken (by a file on disk
-/// other than `src` itself, or by an earlier item in this batch).
-fn claim(
-    rules: NameRules,
-    dir: &Path,
-    name: &str,
-    src: &Path,
-    taken: &mut HashSet<(PathBuf, String)>,
-) -> Option<PathBuf> {
-    let (stem, ext) = crate::rename::split_name(name);
-    for i in 1..1000 {
-        let candidate = match (i, ext.is_empty()) {
-            (1, _) => name.to_string(),
-            (_, true) => format!("{stem} ({i})"),
-            (_, false) => format!("{stem} ({i}).{ext}"),
-        };
-        let key = (dir.to_path_buf(), names::fold_key(rules, &candidate));
-        let path = dir.join(&candidate);
-        let is_self = path == src;
-        // A case-only rename of the file itself is fine.
-        let self_case = src.parent() == Some(dir)
-            && src.file_name().is_some_and(|n| names::collide(rules, &n.to_string_lossy(), &candidate));
-        let free = !taken.contains(&key) && (is_self || self_case || std::fs::symlink_metadata(&path).is_err());
-        if free {
-            taken.insert(key);
-            return Some(path);
-        }
-    }
-    None
 }
 
 pub fn save_pending(db: &Db, plan_id: i64, decisions: &[Decision]) -> Result<()> {

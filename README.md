@@ -7,9 +7,10 @@ TypeScript, SQLite for state). Nothing leaves the machine.
 > Working name. The display name lives in `crates/arch-ade-core/src/config.rs`
 > (`APP_NAME`) plus `productName`/`identifier` in `src-tauri/tauri.conf.json`.
 
-**Status:** Phase 3 (Phase 1's browser, previews, journal, dry run, rename and
+**Status:** Phase 4 (Phase 1's browser, previews, journal, dry run, rename and
 duplicates; Phase 2's rules, watched folders, project-folder protection and update notice;
-plus categorize-and-rename with an optional local AI). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+Phase 3's categorize-and-rename with an optional local AI; plus File-by-File mode with
+display skins). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [PLATFORM_SUPPORT.md](PLATFORM_SUPPORT.md).
 
 ## Safety model
@@ -152,6 +153,38 @@ suggests names.
 **Category whitelists** (Settings > Local AI and categories > Manage category whitelists) are named lists
 of categories, each with its own subcategories and optional kinds, extensions and keywords
 used when guessing without AI. Two built-ins: *General* and *Simple*; **Duplicate** one to edit it.
+
+## File by File
+
+**File by File** (Cmd/Ctrl+Shift+F) goes through the selected files (or every visible file)
+one at a time, with the preview, and you decide each with a key:
+
+| Key | Does |
+| --- | --- |
+| K or Enter | Keep (leave it where it is) |
+| M | Move: pick a folder (type to filter, or type a new folder name) |
+| 1 to 9 | Move straight to a quick-pick folder (recent picks, then the open folder's subfolders) |
+| R or F2 | Rename |
+| T, Delete or Backspace | Move to the trash |
+| Shift+Delete or Shift+Backspace | Delete permanently, after a confirmation |
+| → or S / ← or B | Skip / Back |
+| Cmd/Ctrl+Z | Undo the latest decision and go back to that file |
+| Esc | Done |
+
+**Other folder…** in the Move picker lets you choose a folder outside the open one; like a
+rule destination, it's then remembered as allowed. Each decision is its own small plan in
+the journal, applied straight away, so Undo here (or
+in the main window) walks back one file at a time. With dry run on, decisions are only shown.
+**Delete permanently** is the one thing that can't be undone: it skips the trash, asks
+first, only works on single files, and shows in History as "done (can't be undone)". Undo
+moves past it to the decision before.
+
+**Skins** change only how a decision looks; the keys are the same. *Minimal* (the default)
+draws nothing and costs nothing. *Volcano* and *Space* animate each decision on a small
+pixel canvas (capped at 30fps, and nothing runs while the window is hidden or minimized).
+Skins are a sprite sheet plus a JSON manifest, so you can make your own: put them in
+`<app data>/skins/<name>/` (see [docs/SKINS.md](docs/SKINS.md)). The built-in sheets are
+original art drawn in code: `npm run build-skins` regenerates them from `scripts/skins/`.
 
 ## Update notice
 

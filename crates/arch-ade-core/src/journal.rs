@@ -3,6 +3,10 @@
 //!
 //! History is linear: applying a new plan discards anything that was undone
 //! (the redo stack), like an editor.
+//!
+//! A plan that permanently deleted a file ends as `final`: it stays in the
+//! history but can't be undone or redone, and undo moves past it to the plan
+//! before.
 
 use std::path::{Path, PathBuf};
 
@@ -85,6 +89,10 @@ enum Step {
     RestoreTags {
         path: PathBuf,
         previous: Option<Vec<u8>>,
+    },
+    Delete {
+        path: PathBuf,
+        expect: Option<Fingerprint>,
     },
 }
 
@@ -208,6 +216,9 @@ impl<'a> Journal<'a> {
                     let previous = r.previous.map(|b| base64_decode(&b)).transpose()?;
                     Step::RestoreTags { path: PathBuf::from(src.unwrap_or_default()), previous }
                 }
+                // Only reachable for a delete plan interrupted by a crash
+                // before it was marked final: nothing to bring back.
+                "delete" => continue,
                 other => return Err(Error::Other(format!("cannot undo step kind {other}"))),
             };
             steps.push(step);
@@ -262,6 +273,12 @@ impl<'a> Journal<'a> {
             conn.execute("UPDATE ops SET status = 'unknown' WHERE plan_id = ?1 AND status = 'pending'", [id])?;
             conn.execute("UPDATE plans SET status = 'interrupted' WHERE id = ?1", [id])?;
         }
+        // A delete that may have happened can't be undone either way.
+        conn.execute(
+            "UPDATE plans SET status = 'final' WHERE status = 'interrupted'
+               AND EXISTS (SELECT 1 FROM ops o WHERE o.plan_id = plans.id AND o.kind = 'delete' AND o.status IN ('done','unknown'))",
+            [],
+        )?;
         // Planned-but-never-applied plans from earlier sessions are stale.
         conn.execute("UPDATE plans SET status = 'expired' WHERE status = 'planned'", [])?;
         Ok(ids)
@@ -340,7 +357,13 @@ impl<'a> Journal<'a> {
             }
         }
 
+        let deleted: bool = self.db.conn().query_row(
+            "SELECT EXISTS(SELECT 1 FROM ops WHERE plan_id = ?1 AND kind = 'delete' AND status = 'done')",
+            [plan_id],
+            |r| r.get(0),
+        )?;
         let status = match (direction, &error) {
+            _ if deleted => "final",
             ("undo", None) => "undone",
             (_, None) => "applied",
             (_, Some(_)) => "partial",
@@ -463,6 +486,19 @@ impl<'a> Journal<'a> {
                 let r = TagReceipt { previous: previous.map(|b| base64_encode(&b)) };
                 Ok(Outcome::Done(Some(serde_json::to_string(&r)?)))
             }
+            Step::Delete { path, expect } => {
+                let path = self.scope.check(path)?;
+                let md = std::fs::symlink_metadata(&path).map_err(|_| Error::NotFound(path.display().to_string()))?;
+                if md.is_dir() {
+                    return Err(Error::Plan(format!(
+                        "{} is a folder; only files are deleted permanently",
+                        path.display()
+                    )));
+                }
+                check_fingerprint(&path, expect, false)?;
+                std::fs::remove_file(&path)?;
+                Ok(Outcome::Done(None))
+            }
             Step::RestoreTags { path, previous } => {
                 let path = self.scope.check(path)?;
                 if std::fs::symlink_metadata(&path).is_err() {
@@ -483,6 +519,7 @@ fn forward_step(o: &PlannedOp, size_only: bool) -> Step {
         Op::Copy { from, to } => Step::Copy { from: from.clone(), to: to.clone(), expect: o.expect, size_only },
         Op::Archive { from, to } => Step::Archive { from: from.clone(), to: to.clone(), expect: o.expect, size_only },
         Op::Tag { path, tags } => Step::Tag { path: path.clone(), tags: tags.clone() },
+        Op::Delete { path } => Step::Delete { path: path.clone(), expect: o.expect },
     }
 }
 
@@ -499,6 +536,7 @@ fn describe(step: &Step) -> (&'static str, Option<String>, Option<String>) {
         Step::TrashCreated { path, .. } => ("trash-created", s(path), None),
         Step::Tag { path, .. } => ("tag", s(path), None),
         Step::RestoreTags { path, .. } => ("restore-tags", s(path), None),
+        Step::Delete { path, .. } => ("delete", s(path), None),
     }
 }
 

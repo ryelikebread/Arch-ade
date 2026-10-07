@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-07
+
+- Phase 4: File by File (Cmd/Ctrl+Shift+F): one file at a time with its preview; Keep, Move (quick-pick with 1-9, new folders), Rename, Trash, Delete permanently, Skip/Back, progress and a summary. Each decision is its own journaled plan, so Undo walks back one file at a time; dry run only shows decisions. Why: fast hands-on sorting that stays undoable.
+- Phase 4: permanent delete (files only, confirmed, fingerprint-checked) as the one op outside the trash; plans with it end "final" and Undo moves past them. Why: the spec's explicit exception, kept from blocking undo of everything before it.
+- Phase 4: pluggable display skins (sprite sheet + JSON manifest): Minimal (default, no drawing), Volcano and Space, all original art drawn in code; user skins load from the app-data skins folder. Canvas capped at 30fps and paused while hidden. Why: optional fun without costing anything when off.
+
 ## 2026-10-06
 
 - Phase 3: Categorize (Cmd/Ctrl+Shift+K) suggests a category, subcategory and name per file and builds a reviewed, journaled plan; works fully with the AI off (media tags, past decisions, whitelist keywords). Why: sort and name files by content, still nothing changes without review.

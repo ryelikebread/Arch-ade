@@ -13,6 +13,7 @@ pub mod fsops;
 pub mod journal;
 pub mod kind;
 pub mod names;
+pub mod onebyone;
 pub mod organize;
 pub mod plan;
 pub mod platform;

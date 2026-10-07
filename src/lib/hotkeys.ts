@@ -2,7 +2,7 @@
 
 export type Action =
   | "open" | "undo" | "redo" | "selectAll" | "rename" | "trash" | "move" | "duplicates" | "search"
-  | "help" | "history" | "up" | "down" | "toggleDryRun" | "escape" | "rules" | "categorize";
+  | "help" | "history" | "up" | "down" | "toggleDryRun" | "escape" | "rules" | "categorize" | "fileByFile";
 
 export interface KeyLike {
   key: string;
@@ -37,6 +37,7 @@ export const BINDINGS: Binding[] = [
   { action: "toggleDryRun", key: "t", mod: true, shift: true },
   { action: "rules", key: "l", mod: true, shift: true },
   { action: "categorize", key: "k", mod: true, shift: true },
+  { action: "fileByFile", key: "f", mod: true, shift: true },
   { action: "help", key: "F1" },
   { action: "help", key: "?", shift: true },
   { action: "up", key: "ArrowUp" },

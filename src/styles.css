@@ -154,3 +154,33 @@ table.ai-review td { vertical-align: top; }
 table.ai-review input[type="text"] { width: 100%; min-width: 14em; }
 table.ai-review td:nth-child(2) { max-width: 18em; overflow-wrap: anywhere; }
 button.link { background: none; border: none; box-shadow: none; text-decoration: underline; padding: 0 4px; }
+
+/* File by File */
+dialog.fbf { width: 96vw; max-width: 1400px; height: 92vh; max-height: 92vh; }
+.fbf-grid { display: grid; grid-template-rows: auto 1fr auto auto; height: 92vh; }
+.fbf-head { display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: var(--panel2); }
+.fbf-head h3 { padding: 4px 0; background: none; }
+.fbf-bar { flex: 1; height: 8px; background: var(--bg); border: var(--px) solid var(--grid); min-width: 80px; }
+.fbf-bar-fill { height: 100%; width: 0; background: var(--ok); }
+.fbf-progress-text { font-size: 12px; color: var(--dim); white-space: nowrap; }
+.fbf-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 520px); min-height: 0; }
+.fbf-body .preview { border-right: var(--px) solid var(--grid); overflow: auto; min-height: 0; }
+.fbf-side { position: relative; padding: 12px; display: flex; flex-direction: column; gap: 8px; overflow: auto; }
+.fbf-stage canvas.skin-stage { display: block; image-rendering: pixelated; max-width: 100%; box-shadow: 0 0 0 var(--px) var(--grid); }
+.fbf-name { font: 13px var(--pixel-font); color: var(--accent); overflow-wrap: anywhere; user-select: text; }
+.fbf-state { font-size: 12px; color: var(--accent2); min-height: 1em; }
+.fbf-note { font-size: 12px; color: var(--ink); min-height: 1em; }
+.fbf-note.error { color: var(--danger); }
+.fbf-dry { font-size: 12px; color: var(--accent); }
+.fbf-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-top: var(--px) solid var(--grid); }
+.fbf-actions button, .fbf-slots button { display: inline-flex; gap: 6px; align-items: center; }
+.fbf-slots { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 0 12px 10px; }
+.fbf-slots .note { margin: 0; }
+kbd { font: 10px var(--pixel-font); padding: 1px 4px; background: var(--bg); color: var(--dim); }
+button.primary kbd, button.danger kbd { background: color-mix(in srgb, var(--bg) 25%, transparent); color: inherit; }
+.fbf-overlay { position: absolute; inset: 8px; background: var(--panel); box-shadow: 0 0 0 var(--px) var(--ink); padding: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
+.fbf-overlay .head { font: 12px var(--pixel-font); color: var(--accent); text-transform: uppercase; overflow-wrap: anywhere; }
+.fbf-picklist { display: flex; flex-direction: column; gap: 2px; overflow: auto; }
+.fbf-picklist button { text-align: left; }
+.fbf-picklist button.picked { background: var(--select); }
+@media (max-width: 900px) { .fbf-body { grid-template-columns: 1fr; } }

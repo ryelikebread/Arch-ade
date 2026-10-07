@@ -253,3 +253,25 @@ Cross-cutting
   recorded only once that plan is actually applied.
 - `src-tauri/src/ai_commands.rs`: `ai_suggest` runs on a worker, streams `ai-progress`, can
   be cancelled, and checks Ollama once up front (falls back with a reason if it's down).
+
+## 11. Phase 4: File-by-File mode and skins
+
+- `onebyone.rs`: a `Decision` (move, rename, trash, delete) about one file becomes one
+  plan. Moves into a folder where the name is taken get " (2)" (shared `free_target`, also
+  used by Categorize); renames to a taken name are refused. `subfolders` feeds the
+  quick-pick (no hidden or project folders).
+- `plan.rs`/`journal.rs`: new `Op::Delete`, files only, fingerprint-checked, plain
+  `remove_file`. A plan that deleted something ends as `final`: never undone or redone;
+  `can_undo` skips it, so Undo continues with the plan before. A crash mid-delete also
+  ends `final`. This is the only op outside the trash, per the spec.
+- `src/lib/fbf.ts`: the session (queue, decisions, undo order, counts) and the key map,
+  free of the DOM. `src/ui/fbf.ts`: the screen; Undo there only reverses the journal plan
+  if it's that session's latest one, otherwise it points to History.
+- Skins (`src/skins/`): `format.ts` (manifest types, validation, timing math), `stage.ts`
+  (canvas renderer), `index.ts` (Minimal + built-ins + `<app data>/skins/`, loaded by the
+  `user_skins` command, PNG only, 4 MB cap). The renderer only ticks while something
+  moves: 30fps during an animation, the scenery's own rate (2-3 fps) when idle, nothing
+  for a still scene or Minimal, and it stops on `visibilitychange` or minimize.
+- Art: `scripts/skins/*.mjs` draw every sprite (ASCII pixel art and simple shapes) and
+  `scripts/build-skins.mjs` packs them into a PNG sheet with Node's zlib. No third-party
+  art. The 3x5 caption font is in `src/pixel/font.ts`.

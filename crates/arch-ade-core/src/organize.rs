@@ -167,7 +167,7 @@ pub fn produced_paths(plan: &Plan) -> Vec<PathBuf> {
             Op::Mkdir { path } => vec![path.clone()],
             Op::Move { from, to } => vec![from.clone(), to.clone()],
             Op::Copy { to, .. } | Op::Archive { to, .. } => vec![to.clone()],
-            Op::Tag { path, .. } | Op::Trash { path } => vec![path.clone()],
+            Op::Tag { path, .. } | Op::Trash { path } | Op::Delete { path } => vec![path.clone()],
         })
         .collect()
 }

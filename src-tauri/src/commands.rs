@@ -310,12 +310,15 @@ fn quiet_after(s: &Shared, report: Option<&RunReport>) {
 pub struct JournalState {
     can_undo: bool,
     can_redo: bool,
+    /// The plan Undo would reverse next (File-by-File checks it's its own).
+    undo_plan_id: Option<i64>,
 }
 
 #[tauri::command]
 pub fn journal_state(state: State<'_, Shared>) -> Res<JournalState> {
     let j = Journal::new(&state.db, &state.scope, platform::current());
-    Ok(JournalState { can_undo: j.can_undo()?.is_some(), can_redo: j.can_redo()?.is_some() })
+    let undo_plan_id = j.can_undo()?;
+    Ok(JournalState { can_undo: undo_plan_id.is_some(), can_redo: j.can_redo()?.is_some(), undo_plan_id })
 }
 
 #[tauri::command]
