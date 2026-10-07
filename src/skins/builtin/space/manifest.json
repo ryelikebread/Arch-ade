@@ -95,6 +95,74 @@
   72,
   62
  ],
+ "sounds": {
+  "keep": [
+   {
+    "sfx": "blip",
+    "at": 0.15
+   },
+   {
+    "sfx": "launch",
+    "at": 0.28
+   },
+   {
+    "sfx": "chime",
+    "at": 0.62
+   }
+  ],
+  "trash": [
+   {
+    "sfx": "blip",
+    "at": 0.15
+   },
+   {
+    "sfx": "launch",
+    "at": 0.28
+   },
+   {
+    "sfx": "explosion",
+    "at": 0.5
+   }
+  ],
+  "delete": [
+   {
+    "sfx": "blip",
+    "at": 0.15
+   },
+   {
+    "sfx": "launch",
+    "at": 0.28
+   },
+   {
+    "sfx": "explosion",
+    "at": 0.5
+   },
+   {
+    "sfx": "rumble",
+    "at": 0.6
+   }
+  ],
+  "move": [
+   {
+    "sfx": "beam",
+    "at": 0.3
+   },
+   {
+    "sfx": "blip",
+    "at": 0.72
+   }
+  ],
+  "rename": [
+   {
+    "sfx": "jingle",
+    "at": 0.15
+   },
+   {
+    "sfx": "blip",
+    "at": 0.5
+   }
+  ]
+ },
  "animations": {
   "keep": {
    "duration": 1800,

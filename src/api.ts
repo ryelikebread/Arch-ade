@@ -47,4 +47,6 @@ export const api = {
   planOne: (path: string, decision: Decision) => invoke<PlanOut>("plan_one", { path, decision }),
   fbfFolders: () => invoke<string[]>("fbf_folders"),
   userSkins: () => invoke<{ folder: string; manifest: unknown; sheet: string }[]>("user_skins"),
+  userMusic: () => invoke<{ dir: string; tracks: { name: string; bytes: number }[]; problems: string[] }>("user_music"),
+  userMusicFile: (name: string) => invoke<ArrayBuffer>("user_music_file", { name }),
 };

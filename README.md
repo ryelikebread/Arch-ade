@@ -185,6 +185,29 @@ pixel canvas (capped at 30fps, and nothing runs while the window is hidden or mi
 Skins are a sprite sheet plus a JSON manifest, so you can make your own: put them in
 `<app data>/skins/<name>/` (see [docs/SKINS.md](docs/SKINS.md)). The built-in sheets are
 original art drawn in code: `npm run build-skins` regenerates them from `scripts/skins/`.
+Skins can also name sound effects for each decision (see [Sound](#sound)).
+
+## Sound
+
+**Sound** in the top bar (or Cmd/Ctrl+Shift+S, also inside File by File) opens an
+arcade-style options screen. Use ↑ ↓ to pick a row, ← → to change it, Enter to toggle,
+Esc to leave. Music starts paused; everything is remembered.
+
+- **Station**: four built-in stations, each an original chiptune loop made for Arch-ade
+  (Arch-ade FM, Island Radio, Orbit FM, Boss Rush), plus **My Music**.
+- **Music**: play or pause. **Music volume** and **Music mute** are separate from pause.
+- **Sound FX** and **FX volume**: the Volcano and Space skins play effects with their
+  animations (a volcano rumble, a rocket launch, a boat horn). Minimal stays silent.
+  **Sound test** plays any effect.
+- **My Music**: put your own .mp3, .m4a, .aac, .ogg, .opus, .wav or .flac files (up to
+  50 MB each) in `<app data>/music/` (**My music folder > Show** opens it). They play in
+  name order and loop. Files that can't be played are skipped and listed in the menu.
+
+The built-in music and effects are generated in code (`src/audio/`), nothing is
+downloaded, and they're released under CC0 (see [MUSIC_CREDITS.md](MUSIC_CREDITS.md)).
+Copyrighted game soundtracks aren't included; if you own tracks you'd like to hear, add
+them through My Music. Sound stops while the window is hidden, and the audio engine is
+suspended whenever nothing is audible.
 
 ## Update notice
 

@@ -2,6 +2,8 @@
 // skins live in src/skins/builtin/<id>/; users can drop more into
 // <app data>/skins/<folder>/. See docs/SKINS.md.
 
+import { isSfx, type SfxName } from "../audio/sfx";
+
 export type SkinEvent = "keep" | "move" | "rename" | "trash" | "delete";
 export const SKIN_EVENTS: SkinEvent[] = ["keep", "move", "rename", "trash", "delete"];
 /** Events every skin must animate; "delete" falls back to "trash". */
@@ -64,6 +66,12 @@ export interface Animation {
   tracks: Track[];
 }
 
+/** A sound effect at a point in an animation (0..1 of its duration). */
+export interface Cue {
+  sfx: SfxName;
+  at: number;
+}
+
 export interface SkinManifest {
   format: 1;
   id: string;
@@ -79,6 +87,8 @@ export interface SkinManifest {
   file: [number, number];
   sprites: Record<string, SpriteRect>;
   animations: Partial<Record<SkinEvent, Animation>>;
+  /** Sound effects per action; "delete" falls back to "trash". Optional. */
+  sounds?: Partial<Record<SkinEvent, Cue[]>>;
 }
 
 const COLOR = /^#([0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -164,6 +174,20 @@ export function validateSkin(raw: unknown): SkinManifest | string[] {
         });
       });
     }
+  }
+  if (m.sounds !== undefined) {
+    const sounds = m.sounds as Record<string, unknown>;
+    if (!sounds || typeof sounds !== "object" || Array.isArray(sounds)) errs.push("sounds must be an object of action: [cues]");
+    else
+      for (const [ev, cues] of Object.entries(sounds)) {
+        if (!SKIN_EVENTS.includes(ev as SkinEvent)) errs.push(`sounds: unknown action ${ev}`);
+        else if (!Array.isArray(cues) || cues.length > 16) errs.push(`sounds.${ev} must be a list of up to 16 cues`);
+        else
+          cues.forEach((c: Cue, i) => {
+            if (!c || !isSfx(c.sfx)) errs.push(`sounds.${ev} cue ${i + 1}: unknown sound ${c?.sfx}`);
+            else if (!num(c.at, 0, 1)) errs.push(`sounds.${ev} cue ${i + 1}: at must be 0..1`);
+          });
+      }
   }
   return errs.length ? errs : (m as unknown as SkinManifest);
 }

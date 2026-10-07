@@ -275,3 +275,12 @@ Cross-cutting
 - Art: `scripts/skins/*.mjs` draw every sprite (ASCII pixel art and simple shapes) and
   `scripts/build-skins.mjs` packs them into a PNG sheet with Node's zlib. No third-party
   art. The 3x5 caption font is in `src/pixel/font.ts`.
+- Sound (`src/audio/`): `synth.ts` computes samples for pulse/triangle/saw/sine/noise
+  voices with pitch sweeps, envelopes and a one-pole filter (pure, tested). `music.ts`
+  holds four original songs as note strings; each is rendered once into a looping
+  buffer, so playback runs no JavaScript. `sfx.ts` defines the effects skins can name in
+  their manifest's `sounds`. `player.ts` owns one AudioContext and suspends it whenever
+  nothing is audible or the window is hidden. My Music: `core::music` lists audio files
+  directly in `<app data>/music/` (no subfolders, no symlinks, 50 MB cap) and the
+  `user_music_file` command returns one track's bytes, played through a media element.
+  The menu is `src/ui/sound.ts`; settings live under the `sound` key.

@@ -108,7 +108,7 @@ export class FbfSession {
 // ---------- keys ----------
 
 export type FbfKey =
-  | { do: "keep" | "move" | "rename" | "trash" | "delete" | "skip" | "back" | "undo" | "close" }
+  | { do: "keep" | "move" | "rename" | "trash" | "delete" | "skip" | "back" | "undo" | "close" | "sound" }
   | { do: "quick"; slot: number };
 
 /** File-by-File's own keys. Plain letters, so they're ignored while typing. */
@@ -116,7 +116,11 @@ export function fbfKey(e: KeyLike, isMac: boolean): FbfKey | null {
   const mod = isMac ? e.metaKey : e.ctrlKey;
   const other = isMac ? e.ctrlKey : e.metaKey;
   if (other || e.altKey) return null;
-  if (mod) return !e.shiftKey && e.key.toLowerCase() === "z" ? { do: "undo" } : null;
+  if (mod) {
+    const k = e.key.toLowerCase();
+    if (!e.shiftKey && k === "z") return { do: "undo" };
+    return e.shiftKey && k === "s" ? { do: "sound" } : null;
+  }
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (e.shiftKey && (k === "Delete" || k === "Backspace")) return { do: "delete" };
   if (e.shiftKey) return null;

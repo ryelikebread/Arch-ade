@@ -56,3 +56,15 @@ Minimal (the default) draws nothing. Volcano and Space draw a small pixel scene,
 
 ## Can I make my own skin?
 Yes. A skin is a PNG sprite sheet plus a `manifest.json` in a folder under `skins` in the app-data folder (shown in Settings). See `docs/SKINS.md` in the source for the format. A broken skin is skipped with a note saying why.
+
+## Where can I add my own music?
+
+Open **Sound** (Cmd/Ctrl+Shift+S), choose **My music folder > Show**, and copy .mp3, .m4a, .aac, .ogg, .opus, .wav or .flac files there (up to 50 MB each). Then pick the **My Music** station. Files that can't be played are skipped and listed in the menu. On Linux, some formats need GStreamer plugins.
+
+## Why aren't famous arcade soundtracks included?
+
+They're copyrighted, so Arch-ade can't ship them. The built-in stations are original music made for Arch-ade (CC0). If you own soundtrack files, add them through **My Music**.
+
+## Does music use a lot of CPU?
+
+Only while it plays. The built-in songs are rendered once into a loop, and the audio engine is suspended while music is paused or muted and no effect is playing, and whenever the window is hidden.

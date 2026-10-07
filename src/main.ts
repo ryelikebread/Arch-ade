@@ -16,6 +16,8 @@ import { dupesDialog, helpDialog, historyDialog, planReview, renameDialog, setti
 import { h, modal } from "./ui/dom";
 import { aiSettingsDialog, categorizeDialog } from "./ui/ai";
 import { fileByFile } from "./ui/fbf";
+import { soundMenu } from "./ui/sound";
+import { sound } from "./audio/player";
 import { rulesDialog } from "./ui/rules";
 import { PreviewPane } from "./ui/preview";
 import { FileTable } from "./ui/table";
@@ -61,6 +63,7 @@ const header = h(
   h("button", { onclick: () => historyDialog() }, "History"),
   h("button", { onclick: () => openRules() }, "Rules"),
   dryBtn,
+  h("button", { onclick: () => soundMenu(), title: "Music and sound effects" }, "Sound"),
   h("button", { onclick: () => openSettings() }, "Settings"),
   h("button", { onclick: () => helpDialog(state.isMac) }, "Help"),
 );
@@ -421,6 +424,7 @@ document.addEventListener("keydown", (ev) => {
     case "rules": return openRules();
     case "categorize": return doCategorize();
     case "fileByFile": return doFileByFile();
+    case "sound": return soundMenu();
     case "toggleDryRun": return toggleDryRun();
     case "help": return helpDialog(state.isMac);
     case "up": return table.move(-1, ev.shiftKey);
@@ -481,6 +485,7 @@ async function boot() {
     }
     const s = await api.getSettings();
     if (typeof s.dryRun === "boolean") state.dryRun = s.dryRun;
+    sound.init(s.sound);
     renderDryRun();
     const theme = state.themes.find((t) => t.id === s.theme);
     if (theme) setTheme(theme);

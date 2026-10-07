@@ -12,6 +12,7 @@ pub mod error;
 pub mod fsops;
 pub mod journal;
 pub mod kind;
+pub mod music;
 pub mod names;
 pub mod onebyone;
 pub mod organize;

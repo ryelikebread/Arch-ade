@@ -148,6 +148,14 @@ export const manifest = {
     { sprite: "pad", x: 68, y: 78 },
   ],
   file: FILE,
+  // Effects from src/audio/sfx.ts, at a point (0..1) in each animation.
+  sounds: {
+    keep: [{ sfx: "blip", at: 0.15 }, { sfx: "launch", at: 0.28 }, { sfx: "chime", at: 0.62 }],
+    trash: [{ sfx: "blip", at: 0.15 }, { sfx: "launch", at: 0.28 }, { sfx: "explosion", at: 0.5 }],
+    delete: [{ sfx: "blip", at: 0.15 }, { sfx: "launch", at: 0.28 }, { sfx: "explosion", at: 0.5 }, { sfx: "rumble", at: 0.6 }],
+    move: [{ sfx: "beam", at: 0.3 }, { sfx: "blip", at: 0.72 }],
+    rename: [{ sfx: "jingle", at: 0.15 }, { sfx: "blip", at: 0.5 }],
+  },
   animations: {
     keep: launch(false, false),
     trash: launch(true, false),

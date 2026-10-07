@@ -49,6 +49,7 @@ The built-in skins are good examples: `src/skins/builtin/volcano/manifest.json` 
 | `scene` | Sprites always drawn under everything; with `fps`, multi-frame ones animate slowly. |
 | `file` | Where the current file's icon (16x16) waits for a decision. |
 | `sprites` | Rectangles on the sheet. `frames` copies sit side by side, left to right. `file` is reserved. |
+| `sounds` | Optional sound effects per decision, see below. |
 | `animations` | One per decision: `keep`, `move`, `rename`, `trash` are required; `delete` is optional and falls back to `trash`. Duration is 100..10000 ms. |
 
 ## Tracks
@@ -70,6 +71,22 @@ sprite or a caption:
 - `fps`: animate a multi-frame sprite; `once: true` plays the frames once and holds the last.
 - `text`: a caption in the built-in 3x5 pixel font (uppercase). `{name}`, `{newName}`,
   `{dest}` and `{kind}` are filled in. `clip: [x, y, w, h]` cuts it to a box (for tickers).
+
+## Sounds
+
+`sounds` maps a decision to effects played during its animation. `at` is when, from 0 to
+1 of the animation's duration (like a key's `t`). `delete` falls back to `trash`.
+
+```json
+"sounds": {
+  "keep":  [{ "sfx": "chime", "at": 0.4 }],
+  "trash": [{ "sfx": "whoosh", "at": 0.1 }, { "sfx": "explosion", "at": 0.5 }]
+}
+```
+
+The effects are built into Arch-ade (made in `src/audio/sfx.ts`): `blip`, `pop`, `chime`,
+`whoosh`, `sizzle`, `rumble`, `tom`, `tomHi`, `horn`, `splash`, `launch`, `explosion`,
+`beam`, `jingle`. Try them with **Sound test** in the Sound menu. Up to 16 per decision.
 
 ## Art
 

@@ -2,6 +2,9 @@
 
 ## 2026-10-07
 
+- Phase 4: Sound menu (Cmd/Ctrl+Shift+S) styled as an arcade options screen: music station, play/pause, music volume and mute, sound-effect volume and mute, sound test. Four built-in stations of original chiptune generated in code (CC0), plus My Music from `<app data>/music/` (mp3, m4a, ogg, wav, flac…). Why: Rye asked for background music and their own tracks.
+- Phase 4: Volcano and Space play original sound effects with each decision; skins name them in a new optional `sounds` manifest field. Audio is suspended while nothing is audible or the window is hidden. Why: Rye asked for skin sound effects with their own mute.
+
 - Phase 4: File by File (Cmd/Ctrl+Shift+F): one file at a time with its preview; Keep, Move (quick-pick with 1-9, new folders), Rename, Trash, Delete permanently, Skip/Back, progress and a summary. Each decision is its own journaled plan, so Undo walks back one file at a time; dry run only shows decisions. Why: fast hands-on sorting that stays undoable.
 - Phase 4: permanent delete (files only, confirmed, fingerprint-checked) as the one op outside the trash; plans with it end "final" and Undo moves past them. Why: the spec's explicit exception, kept from blocking undo of everything before it.
 - Phase 4: pluggable display skins (sprite sheet + JSON manifest): Minimal (default, no drawing), Volcano and Space, all original art drawn in code; user skins load from the app-data skins folder. Canvas capped at 30fps and paused while hidden. Why: optional fun without costing anything when off.

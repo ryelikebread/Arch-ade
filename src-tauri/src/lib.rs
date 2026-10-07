@@ -5,6 +5,7 @@ mod ai_commands;
 mod autorun;
 mod commands;
 mod fbf_commands;
+mod music_commands;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -99,6 +100,8 @@ pub fn run() {
             fbf_commands::plan_one,
             fbf_commands::fbf_folders,
             fbf_commands::user_skins,
+            music_commands::user_music,
+            music_commands::user_music_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Arch-ade");

@@ -10,6 +10,7 @@ import { FbfSession, fbfKey, quickPicks, remember, stemRange, type FbfAction, ty
 import { baseName } from "../lib/format";
 import { listSkins, loadSkin, MINIMAL_ID, type SkinChoice } from "../skins";
 import { Stage } from "../skins/stage";
+import { soundMenu } from "./sound";
 import type { Decision, FileEntry, PlanOut } from "../types";
 import { h, modal } from "./dom";
 import { PreviewPane } from "./preview";
@@ -74,7 +75,7 @@ export async function fileByFile(o: FbfOptions) {
     h(
       "div",
       { class: "fbf-grid" },
-      h("div", { class: "fbf-head" }, h("h3", {}, "File by File"), h("div", { class: "fbf-bar" }, bar), progressText, h("label", {}, "Skin", skinSelect), closeBtn),
+      h("div", { class: "fbf-head" }, h("h3", {}, "File by File"), h("div", { class: "fbf-bar" }, bar), progressText, h("label", {}, "Skin", skinSelect), h("button", { onclick: () => soundMenu(), title: `Music and sound effects (${mod}+Shift+S)` }, "Sound"), closeBtn),
       body,
       h("div", { class: "fbf-actions" }, ...Object.values(buttons)),
       slotsEl,
@@ -390,7 +391,7 @@ export async function fileByFile(o: FbfOptions) {
   function run(k: FbfKey) {
     if (overlay && k.do !== "close") return;
     // At the summary only Undo (which reopens the last file) and Esc do anything.
-    if (session.done && k.do !== "undo" && k.do !== "close") return;
+    if (session.done && k.do !== "undo" && k.do !== "close" && k.do !== "sound") return;
     switch (k.do) {
       case "keep": return void decide("keep", null);
       case "move": return movePicker();
@@ -409,6 +410,7 @@ export async function fileByFile(o: FbfOptions) {
         session.back();
         return render();
       case "undo": return void undo();
+      case "sound": return soundMenu();
       case "close":
         if (overlay) return closeOverlay();
         return close();

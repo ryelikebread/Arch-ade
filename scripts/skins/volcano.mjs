@@ -217,6 +217,14 @@ export const manifest = {
     { sprite: "wave", x: 140, y: 82, fps: 2 },
   ],
   file: FILE,
+  // Effects from src/audio/sfx.ts, at a point (0..1) in each animation.
+  sounds: {
+    keep: [{ sfx: "tomHi", at: 0.05 }, { sfx: "chime", at: 0.4 }, { sfx: "pop", at: 0.55 }],
+    trash: [{ sfx: "whoosh", at: 0.15 }, { sfx: "rumble", at: 0.5 }, { sfx: "sizzle", at: 0.56 }],
+    delete: [{ sfx: "whoosh", at: 0.15 }, { sfx: "explosion", at: 0.52 }, { sfx: "rumble", at: 0.6 }, { sfx: "sizzle", at: 0.7 }],
+    rename: [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75].map((at, i) => ({ sfx: i % 2 ? "tomHi" : "tom", at })).concat([{ sfx: "chime", at: 0.86 }]),
+    move: [{ sfx: "horn", at: 0.28 }, { sfx: "splash", at: 0.48 }, { sfx: "horn", at: 0.7 }],
+  },
   animations: {
     keep: {
       duration: 1800,

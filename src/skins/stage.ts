@@ -3,7 +3,8 @@
 // own (lower) rate, a still scene is drawn once, and everything stops while
 // the window is hidden or minimized.
 
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { sound } from "../audio/player";
+import { onWindowHidden } from "../lib/hidden";
 import { drawText, textWidth } from "../pixel/font";
 import { kindIcon } from "../pixel/sprites";
 import type { Kind } from "../types";
@@ -55,14 +56,7 @@ export class Stage {
     this.ctx.imageSmoothingEnabled = false;
     this.idleFps = Math.min(MAX_FPS, Math.max(0, ...(skin.manifest.scene ?? []).map((p) => (this.frames(p.sprite) > 1 ? p.fps ?? 0 : 0))));
 
-    const onVis = () => this.setHidden(document.hidden);
-    document.addEventListener("visibilitychange", onVis);
-    this.cleanup.push(() => document.removeEventListener("visibilitychange", onVis));
-    // Minimizing doesn't always fire visibilitychange in a webview.
-    getCurrentWindow()
-      .onResized(async () => this.setHidden(document.hidden || (await getCurrentWindow().isMinimized())))
-      .then((un) => this.cleanup.push(un))
-      .catch(() => {});
+    this.cleanup.push(onWindowHidden((hidden) => this.setHidden(hidden)));
     this.wake();
   }
 
@@ -73,11 +67,12 @@ export class Stage {
     this.wake();
   }
 
-  /** Play the animation for an action on a file; falls back to "trash" for "delete". */
+  /** Play the animation (and sounds) for an action on a file; "delete" falls back to "trash". */
   play(event: SkinEvent, kind: Kind, captions: Captions) {
-    const anims = this.skin.manifest.animations;
+    const { animations: anims, sounds } = this.skin.manifest;
     const anim = anims[event] ?? (event === "delete" ? anims.trash : undefined);
     if (!anim) return;
+    sound.cue(sounds?.[event] ?? (event === "delete" ? sounds?.trash : undefined) ?? [], anim.duration);
     this.icon(kind);
     this.playing = { anim, started: performance.now(), kind, captions };
     this.wake();
@@ -89,6 +84,7 @@ export class Stage {
 
   destroy() {
     this.stop();
+    sound.stopSfx();
     this.cleanup.forEach((f) => f());
     this.canvas.remove();
   }
