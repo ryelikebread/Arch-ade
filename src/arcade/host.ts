@@ -7,7 +7,7 @@ import { api } from "../api";
 import { sound } from "../audio/player";
 import { onWindowHidden } from "../lib/hidden";
 import { drawText, textWidth } from "../pixel/font";
-import { kindIcon } from "../pixel/sprites";
+import { arcadeIcon } from "../pixel/sprites";
 import { h } from "../ui/dom";
 import type { Kind } from "../types";
 import { KeyInput } from "./input";
@@ -132,7 +132,7 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
     const icons = new Map<Kind, HTMLImageElement>();
     for (const k of new Set([...theCast.foes, ...theCast.friends].flatMap((x) => (x.file ? [x.file.kind] : [])))) {
       const img = new Image();
-      img.src = kindIcon(k);
+      img.src = arcadeIcon(k);
       icons.set(k, img);
     }
     const hud = h("div", { class: "arcade-keys" }, `${mod.controls.map(([k, d]) => `${k} ${d}`).join("   ")}   Esc pause`);

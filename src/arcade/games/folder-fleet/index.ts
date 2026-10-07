@@ -1,23 +1,46 @@
-// Placeholder until the game is built.
-import type { GameModule } from "../../types";
+// Folder Fleet: a side-scrolling space shooter. The round's trashed and
+// deleted files fly in as an enemy fleet that lines up in formation and
+// dives at you; the kept ones are power capsules. Rules live in logic.ts,
+// the art in sprites.ts, drawing in draw.ts.
+
+import type { Game, GameModule } from "../../types";
+import { render } from "./draw";
+import { newWorld, step, type World } from "./logic";
+import { makeArt, type Art } from "./sprites";
+
+/** The game plus its state, so tests can look inside. */
+export interface FleetGame extends Game {
+  readonly world: World;
+}
 
 export const game: GameModule = {
   id: "folder-fleet",
-  title: "folder-fleet",
-  inspiredBy: "",
-  blurb: "",
-  controls: [],
+  title: "Folder Fleet",
+  inspiredBy: "Inspired by side-scrolling and formation space shooters",
+  blurb: "Trashed and deleted files are an enemy fleet that swoops in and dives at you (bigger files take more hits); kept files are power capsules.",
+  controls: [["Arrows", "move"], ["Space", "fire (hold)"], ["X", "power pulse"]],
   size: [320, 180],
   create(ctx) {
-    return {
+    const world = newWorld(ctx.cast, () => ctx.rng());
+    let art: Art | null | undefined;
+    let ended = false;
+    const g: FleetGame = {
+      world,
       update() {
-        if (ctx.input.pressed("fire")) ctx.end({ won: true, score: 0, defeated: 0, foes: ctx.cast.foes.length, collected: 0 });
+        if (ended) return;
+        step(world, ctx.input, () => ctx.rng());
+        for (const s of world.sounds) ctx.sfx(s);
+        if (world.result) {
+          ended = true;
+          ctx.end(world.result);
+        }
       },
+      // The art is made on the first draw (and stays null without a canvas).
       draw() {
-        ctx.g.fillStyle = "#000";
-        ctx.g.fillRect(0, 0, ctx.width, ctx.height);
-        ctx.text("PLACEHOLDER", 10, 10, "#fff");
+        if (art === undefined) art = makeArt();
+        render(world, ctx, art);
       },
     };
+    return g;
   },
 };

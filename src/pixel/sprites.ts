@@ -49,22 +49,37 @@ export function resetSprites() {
   cache = new Map();
 }
 
-function draw(sprite: Sprite): string {
+/** Draws with `colors` (letter to color), or with the active theme when none is given. */
+function draw(sprite: Sprite, colors?: Record<string, string>): string {
   const c = document.createElement("canvas");
   c.width = 8;
   c.height = 8;
   const ctx = c.getContext("2d");
   if (!ctx) return "";
-  const css = getComputedStyle(document.documentElement);
+  const css = colors ? null : getComputedStyle(document.documentElement);
   sprite.forEach((row, y) => {
     [...row].forEach((ch, x) => {
       const v = COLOR_VAR[ch];
       if (!v) return;
-      ctx.fillStyle = css.getPropertyValue(v).trim() || "#fff";
+      ctx.fillStyle = colors?.[ch] ?? (css!.getPropertyValue(v).trim() || "#fff");
       ctx.fillRect(x, y, 1, 1);
     });
   });
   return c.toDataURL();
+}
+
+/** The arcade is always dark, so its icons use fixed bright colors, whatever the theme. */
+const ARCADE_COLORS: Record<string, string> = { a: "#ffd23f", b: "#4de1ff", d: "#a493c4", i: "#f4ecff", r: "#ff4d6d", g: "#6bff8f" };
+const arcadeCache = new Map<string, string>();
+
+export function arcadeIcon(kind: Kind): string {
+  const name = KIND_SPRITE[kind] ?? "unknown";
+  let url = arcadeCache.get(name);
+  if (url === undefined) {
+    url = draw(SPRITES[name], ARCADE_COLORS);
+    arcadeCache.set(name, url);
+  }
+  return url;
 }
 
 export function kindIcon(kind: Kind): string {

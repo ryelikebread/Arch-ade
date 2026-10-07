@@ -8,7 +8,7 @@
 // Without `script` the game runs live (arrows, Space, X).
 
 import { drawText, textWidth } from "../pixel/font";
-import { kindIcon } from "../pixel/sprites";
+import { arcadeIcon } from "../pixel/sprites";
 import type { Kind } from "../types";
 import { KeyInput } from "./input";
 import { GAMES } from "./registry";
@@ -53,7 +53,7 @@ async function main() {
         new Promise<void>((res) => {
           const img = new Image();
           img.onload = img.onerror = () => res();
-          img.src = kindIcon(k);
+          img.src = arcadeIcon(k);
           icons.set(k, img);
         }),
     ),

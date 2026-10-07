@@ -62,7 +62,7 @@ export interface Harness {
   ctx: GameContext;
   input: KeyInput;
   result: () => GameResult | null;
-  /** Run `ticks` updates (and a draw every `drawEvery`), holding `hold` buttons. Stops early when the game ends. */
+  /** Run `ticks` updates (and a draw every `drawEvery`), holding `hold` buttons. Stops early when the game ends. Each call presses `hold` afresh, so they count as "pressed" on its first tick. */
   run(ticks: number, hold?: Parameters<KeyInput["held"]>[0][], drawEvery?: number): GameResult | null;
 }
 
