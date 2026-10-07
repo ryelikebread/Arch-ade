@@ -138,6 +138,19 @@ class Player {
     this.cue([{ sfx: name, at: 0 }], 0);
   }
 
+  /**
+   * One effect now, on top of whatever else is playing (for games). Quietly
+   * dropped when effects are muted, the window is hidden, or too many are
+   * already playing.
+   */
+  fx(name: SfxName) {
+    if (!this.sfxAudible() || this.hidden || this.live.size >= 8) return;
+    const ctx = this.context();
+    if (!ctx) return;
+    if (ctx.state === "running") this.playSfx(name, ctx.currentTime);
+    else ctx.resume().then(() => this.playSfx(name, ctx.currentTime), () => {});
+  }
+
   stopSfx() {
     for (const s of this.live) {
       try {

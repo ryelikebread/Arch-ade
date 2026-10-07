@@ -18,6 +18,9 @@ import { aiSettingsDialog, categorizeDialog } from "./ui/ai";
 import { fileByFile } from "./ui/fbf";
 import { soundMenu } from "./ui/sound";
 import { sound } from "./audio/player";
+import { arcadeSettingsSection, arcadeWanted, launchArcade, loadArcadeSettings, arcadeSettings } from "./arcade/launch";
+import { roundFromPlan } from "./arcade/round";
+import type { ArcadeRound } from "./arcade/types";
 import { rulesDialog } from "./ui/rules";
 import { PreviewPane } from "./ui/preview";
 import { FileTable } from "./ui/table";
@@ -127,7 +130,8 @@ const msg = h("span", { class: "msg" });
 const counts = h("span");
 const toolsEl = h("span");
 const updateEl = h("span", {});
-const footer = h("footer", {}, msg, updateEl, counts, toolsEl);
+const arcadeEl = h("span", {});
+const footer = h("footer", {}, msg, arcadeEl, updateEl, counts, toolsEl);
 
 document.getElementById("app")!.append(header, toolbar, h("main", {}, table.el, preview.el), footer);
 
@@ -287,9 +291,25 @@ function afterRun(r: RunReport | null) {
   rescan();
 }
 
+/** A round of edits just finished: offer or start a game if Arcade mode is on. */
+function arcadeRound(round: ArcadeRound) {
+  if (!arcadeWanted(round)) return;
+  if (arcadeSettings().mode === "auto") return void launchArcade(round, true);
+  const n = round.files.length;
+  arcadeEl.replaceChildren(
+    h("button", { class: "primary", title: "Your processed files come back as a mini-game", onclick: () => (arcadeEl.replaceChildren(), launchArcade(round, false)) }, `Play arcade (${n} file${n === 1 ? "" : "s"})`),
+    h("button", { title: "Dismiss", onclick: () => arcadeEl.replaceChildren() }, "×"),
+  );
+}
+
 function review(out: PlanOut) {
+  // Files as the list knew them before the plan ran (for the arcade).
+  const before = state.entries;
   // "Turn off" inside the dialog reopens the same plan, now applicable.
-  planReview(out, afterRun, () => {
+  planReview(out, (r) => {
+    afterRun(r);
+    if (r.direction === "apply" && r.done > 0) arcadeRound(roundFromPlan(out.plan, before));
+  }, () => {
     toggleDryRun();
     review({ ...out, dryRun: state.dryRun });
   });
@@ -346,6 +366,7 @@ function doFileByFile() {
       rescan();
     },
     onClose: () => table.focus(),
+    onRound: arcadeRound,
   }).catch((e) => say(String(e), true));
 }
 
@@ -399,7 +420,7 @@ function setTheme(t: Theme) {
 }
 
 function openSettings() {
-  settingsDialog(state.themes, state.themeId, setTheme, state.info?.dataDir ?? "", () => aiSettingsDialog(say));
+  settingsDialog(state.themes, state.themeId, setTheme, state.info?.dataDir ?? "", () => aiSettingsDialog(say), arcadeSettingsSection());
 }
 
 // ---------- keyboard ----------
@@ -486,6 +507,7 @@ async function boot() {
     const s = await api.getSettings();
     if (typeof s.dryRun === "boolean") state.dryRun = s.dryRun;
     sound.init(s.sound);
+    loadArcadeSettings(s.arcade);
     renderDryRun();
     const theme = state.themes.find((t) => t.id === s.theme);
     if (theme) setTheme(theme);

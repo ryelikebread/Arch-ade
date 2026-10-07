@@ -11,6 +11,9 @@ import { baseName } from "../lib/format";
 import { listSkins, loadSkin, MINIMAL_ID, type SkinChoice } from "../skins";
 import { Stage } from "../skins/stage";
 import { soundMenu } from "./sound";
+import { arcadeSettings, arcadeWanted, launchArcade } from "../arcade/launch";
+import { roundFromFbf } from "../arcade/round";
+import type { ArcadeRound } from "../arcade/types";
 import type { Decision, FileEntry, PlanOut } from "../types";
 import { h, modal } from "./dom";
 import { PreviewPane } from "./preview";
@@ -26,6 +29,8 @@ export interface FbfOptions {
   /** Something on disk changed (refresh the main list when the session ends). */
   onChanged: () => void;
   onClose: () => void;
+  /** The session ended early with some decisions made (Arcade mode may offer a game). */
+  onRound?: (round: ArcadeRound) => void;
 }
 
 export async function fileByFile(o: FbfOptions) {
@@ -86,6 +91,7 @@ export async function fileByFile(o: FbfOptions) {
   dialog.addEventListener("cancel", (ev) => ev.preventDefault()); // Esc goes through our keys
   dialog.addEventListener("close", () => {
     document.removeEventListener("keydown", onKey);
+    if (!session.done && session.decidedCount > 0) o.onRound?.(roundFromFbf(session.results()));
     stage?.destroy();
     dialog.remove();
     if (changed) o.onChanged();
@@ -170,8 +176,19 @@ export async function fileByFile(o: FbfOptions) {
     stage?.setFile(gone(rec) ? null : e.kind);
   }
 
+  // Auto mode starts a game once per finished session (not again after an undo and redo).
+  let autoPlayed = false;
+
   function renderSummary() {
     const c = session.counts();
+    const round = roundFromFbf(session.results());
+    const arcade = arcadeWanted(round)
+      ? h("p", {}, h("button", { class: "primary", onclick: () => launchArcade(round, false) }, "Play arcade"), " Your processed files come back as a mini-game.")
+      : null;
+    if (arcade && arcadeSettings().mode === "auto" && !autoPlayed) {
+      autoPlayed = true;
+      launchArcade(round, true);
+    }
     for (const k of ["keep", "move", "rename", "trash", "delete", "skip", "back"] as const) buttons[k].disabled = true;
     slotsEl.querySelectorAll("button").forEach((b) => (b.disabled = true));
     nameEl.textContent = "All done";
@@ -183,6 +200,7 @@ export async function fileByFile(o: FbfOptions) {
     preview.clear();
     preview.el.querySelector(".body")?.replaceChildren(
       h("p", {}, `${session.items.length} file(s): ${c.keep} kept, ${c.move} moved, ${c.rename} renamed, ${c.trash} trashed, ${c.delete} deleted permanently.`),
+      ...(arcade ? [arcade] : []),
       h("table", { class: "list" }, h("tr", {}, h("th", {}, "File"), h("th", {}, "Decision"), h("th", {}, "")), ...rows),
     );
   }

@@ -219,3 +219,14 @@ dialog.arcade::backdrop { background: rgba(0, 0, 0, 0.75); }
 .arcade-keys { margin-top: 10px; text-align: center; font-size: 10px; color: #4de1ff; white-space: pre; }
 @keyframes arcade-blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .arcade-row .cursor { animation: none; } }
+
+/* ---------- Arcade host (shares the Sound menu's cabinet look) ---------- */
+dialog.arcade-host { width: auto; max-width: 96vw; min-width: min(560px, 94vw); max-height: 96vh; }
+.arcade-host .arcade-frame { padding: 18px 20px 12px; }
+.arcade-sub { font: 12px/1.5 var(--text-font); text-transform: none; color: #a493c4; margin: 0 0 12px; max-width: 520px; }
+.arcade-sub.bad { color: #ff4d6d; }
+.arcade-big { font-size: 16px; color: #6bff8f; margin: 0 0 6px; text-align: center; }
+.arcade-stage { position: relative; display: flex; justify-content: center; }
+.arcade-canvas { display: block; background: #000; image-rendering: pixelated; }
+.arcade-pause { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 15%; background: rgba(7, 4, 15, 0.86); }
+.arcade-pause h2 { margin-bottom: 10px; }

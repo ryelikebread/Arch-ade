@@ -57,6 +57,35 @@ const RECIPES = {
     { wave: "square", start: 0.27, dur: 0.45, f0: n("G6"), vol: 0.2, duty: 0.25, decay: 3, vib: [6, 0.3] },
     { wave: "triangle", start: 0.27, dur: 0.45, f0: n("C4"), vol: 0.3, decay: 3 },
   ],
+  // ---------- arcade ----------
+  /** A small blaster shot. */
+  shoot: [{ wave: "square", start: 0, dur: 0.09, f0: 1400, f1: 300, vol: 0.18, duty: 0.25, decay: 10 }],
+  /** Something takes a hit. */
+  hit: [
+    { wave: "noise", start: 0, dur: 0.08, f0: 5000, vol: 0.3, decay: 30 },
+    { wave: "square", start: 0, dur: 0.07, f0: 300, f1: 120, vol: 0.15, decay: 20 },
+  ],
+  /** The player gets hurt. */
+  hurt: [{ wave: "saw", start: 0, dur: 0.25, f0: 420, f1: 90, vol: 0.25, decay: 6 }],
+  /** A hop. */
+  jump: [{ wave: "square", start: 0, dur: 0.16, f0: 260, f1: 700, vol: 0.16, duty: 0.25, release: 0.04 }],
+  /** A coin or point pickup. */
+  coin: [
+    { wave: "square", start: 0, dur: 0.06, f0: n("B5"), vol: 0.16, duty: 0.25 },
+    { wave: "square", start: 0.06, dur: 0.22, f0: n("E6"), vol: 0.16, duty: 0.25, decay: 6 },
+  ],
+  /** A power-up: a fast rising arpeggio. */
+  powerup: (["C5", "E5", "G5", "C6", "E6", "G6"] as const).map((name, i): Voice => ({ wave: "square", start: i * 0.05, dur: 0.06, f0: n(name), vol: 0.15, duty: 0.25 })),
+  /** A ball bouncing off a paddle or wall. */
+  bounce: [{ wave: "triangle", start: 0, dur: 0.06, f0: 520, vol: 0.4, decay: 25 }],
+  /** Game over: a slow falling line. */
+  gameover: (["E5", "C5", "A4", "E4"] as const).map((name, i): Voice => ({ wave: "triangle", start: i * 0.22, dur: 0.24, f0: n(name), vol: 0.35, decay: i === 3 ? 2 : 4 })),
+  /** A win fanfare. */
+  win: [
+    ...(["C5", "E5", "G5"] as const).map((name, i): Voice => ({ wave: "square", start: i * 0.1, dur: 0.1, f0: n(name), vol: 0.16, duty: 0.25 })),
+    { wave: "square", start: 0.3, dur: 0.5, f0: n("C6"), vol: 0.16, duty: 0.25, decay: 2, vib: [6, 0.3] },
+    { wave: "triangle", start: 0.3, dur: 0.5, f0: n("C4"), vol: 0.3, decay: 2 },
+  ],
 } satisfies Record<string, Voice[]>;
 
 export type SfxName = keyof typeof RECIPES;
