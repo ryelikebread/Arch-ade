@@ -86,7 +86,7 @@ sprite or a caption:
 
 The effects are built into Arch-ade (made in `src/audio/sfx.ts`): `blip`, `pop`, `chime`,
 `whoosh`, `sizzle`, `rumble`, `tom`, `tomHi`, `horn`, `splash`, `launch`, `explosion`,
-`beam`, `jingle`. Try them with **Sound test** in the Sound menu. Up to 16 per decision.
+`beam`, `jingle`, `shoot`, `hit`, `hurt`, `jump`, `coin`, `powerup`, `bounce`, `gameover`, `win`. Try them with **Sound test** in the Sound menu. Up to 16 per decision.
 
 ## Art
 

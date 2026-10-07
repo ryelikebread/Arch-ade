@@ -221,7 +221,7 @@ dialog.arcade::backdrop { background: rgba(0, 0, 0, 0.75); }
 @media (prefers-reduced-motion: reduce) { .arcade-row .cursor { animation: none; } }
 
 /* ---------- Arcade host (shares the Sound menu's cabinet look) ---------- */
-dialog.arcade-host { width: auto; max-width: 96vw; min-width: min(560px, 94vw); max-height: 96vh; }
+dialog.arcade-host { width: fit-content; max-width: 96vw; min-width: min(560px, 94vw); max-height: 96vh; }
 .arcade-host .arcade-frame { padding: 18px 20px 12px; }
 .arcade-sub { font: 12px/1.5 var(--text-font); text-transform: none; color: #a493c4; margin: 0 0 12px; max-width: 520px; }
 .arcade-sub.bad { color: #ff4d6d; }

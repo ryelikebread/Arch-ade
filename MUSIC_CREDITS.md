@@ -9,7 +9,7 @@ sampled, downloaded or adapted from other music.
 | Island Radio | Lagoon Shuffle | Notes in `src/audio/music.ts`, synthesized at runtime | CC0 1.0 |
 | Orbit FM | Low Orbit | Notes in `src/audio/music.ts`, synthesized at runtime | CC0 1.0 |
 | Boss Rush | Final Sort | Notes in `src/audio/music.ts`, synthesized at runtime | CC0 1.0 |
-| (skins) | Sound effects: blip, pop, chime, whoosh, sizzle, rumble, tom, tomHi, horn, splash, launch, explosion, beam, jingle | Synth recipes in `src/audio/sfx.ts` | CC0 1.0 |
+| (skins, arcade) | Sound effects: blip, pop, chime, whoosh, sizzle, rumble, tom, tomHi, horn, splash, launch, explosion, beam, jingle, shoot, hit, hurt, jump, coin, powerup, bounce, gameover, win | Synth recipes in `src/audio/sfx.ts` | CC0 1.0 |
 
 The chord progressions are common ones (for example Am, F, C, G); the melodies, bass
 lines and drum patterns are written for these tracks.
