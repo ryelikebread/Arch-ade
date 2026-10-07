@@ -31,7 +31,7 @@ export const PERK: Record<Family, Perk> = {
 
 export const familyOf = (kind: Kind): Family => FAMILY[kind] ?? "other";
 
-/** 1..10 on a log scale: about 1 under 4 KB, 6 around 1 MB, 10 from 256 MB up. */
+/** 1..10 on a log scale (round(log2(KB+1)/2)): 1 up to about 7 KB, 5 around 1 MB, 9 at 256 MB, 10 from about 362 MB up. */
 export function strength(bytes: number): number {
   const kb = Math.max(0, bytes) / 1024;
   return Math.max(1, Math.min(10, Math.round(Math.log2(kb + 1) / 2)));
@@ -122,20 +122,35 @@ const nameOf = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
 /** An applied plan's files. Only files the main list knows (it has their kind and size). */
 export function roundFromPlan(plan: Plan, entries: FileEntry[]): ArcadeRound {
-  const byPath = new Map(entries.map((e) => [e.path, e]));
-  const files: ArcadeFile[] = [];
-  const seen = new Set<string>();
+  // A file can have several ops (tag then move, archive then trash): the one
+  // that says most about where it ended up wins.
+  const rank: Record<Fate, number> = { kept: 0, moved: 1, renamed: 1, trashed: 2, deleted: 3 };
+  const fates = new Map<string, Fate>();
+  // Renames that swap names go through a temporary name: follow the hop back.
+  const viaTemp = new Map<string, string>();
+  const isTemp = (p: string) => nameOf(p).startsWith(".arch-ade-tmp-");
   for (const op of plan.ops) {
-    const path = op.type === "move" || op.type === "copy" || op.type === "archive" ? op.from : op.type === "mkdir" ? null : op.path;
-    const e = path ? byPath.get(path) : undefined;
-    if (!e || e.isDir || seen.has(e.path)) continue;
+    let path: string | null;
     let fate: Fate;
-    if (op.type === "trash") fate = "trashed";
-    else if (op.type === "delete") fate = "deleted";
-    else if (op.type === "move") fate = dirOf(op.from) === dirOf(op.to) && nameOf(op.from) !== nameOf(op.to) ? "renamed" : "moved";
-    else fate = "kept";
-    seen.add(e.path);
-    files.push({ name: e.name, kind: e.kind, kindLabel: e.kindLabel, bytes: e.size, fate });
+    if (op.type === "move") {
+      if (isTemp(op.to)) {
+        viaTemp.set(op.to, op.from);
+        continue;
+      }
+      path = viaTemp.get(op.from) ?? op.from;
+      fate = dirOf(path) === dirOf(op.to) && nameOf(path) !== nameOf(op.to) ? "renamed" : "moved";
+    } else if (op.type === "trash") [path, fate] = [op.path, "trashed"];
+    else if (op.type === "delete") [path, fate] = [op.path, "deleted"];
+    else if (op.type === "copy" || op.type === "archive") [path, fate] = [op.from, "kept"];
+    else if (op.type === "mkdir") continue;
+    else [path, fate] = [op.path, "kept"];
+    const had = fates.get(path);
+    if (had === undefined || rank[fate] > rank[had]) fates.set(path, fate);
+  }
+  const files: ArcadeFile[] = [];
+  for (const e of entries) {
+    const fate = fates.get(e.path);
+    if (fate && !e.isDir) files.push({ name: e.name, kind: e.kind, kindLabel: e.kindLabel, bytes: e.size, fate });
   }
   return { source: "Plan", files };
 }

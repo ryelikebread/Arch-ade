@@ -147,8 +147,10 @@ class Player {
     if (!this.sfxAudible() || this.hidden || this.live.size >= 8) return;
     const ctx = this.context();
     if (!ctx) return;
-    if (ctx.state === "running") this.playSfx(name, ctx.currentTime);
-    else ctx.resume().then(() => this.playSfx(name, ctx.currentTime), () => {});
+    // Start it now (it joins `live`, so the cap holds) and always resume: that
+    // also cancels a suspend still in flight from the previous effect ending.
+    this.playSfx(name, ctx.currentTime);
+    ctx.resume().catch(() => {});
   }
 
   stopSfx() {

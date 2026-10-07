@@ -93,6 +93,23 @@ describe("rounds", () => {
     const r = roundFromPlan(plan, [entry("a.jpg", "image", 1), entry("b.pdf", "pdf", 2), entry("d.zip", "archive", 3)]);
     expect(r.files.map((f) => [f.name, f.fate])).toEqual([["a.jpg", "moved"], ["b.pdf", "renamed"], ["d.zip", "trashed"]]);
   });
+  it("from a plan with several ops per file, and a name swap through a temp name", () => {
+    const plan: Plan = {
+      label: "x",
+      issues: [],
+      ops: [
+        { type: "tag", path: "/r/a.jpg", tags: ["x"] },
+        { type: "archive", from: "/r/d.zip", to: "/r/old.zip" },
+        { type: "move", from: "/r/a.jpg", to: "/r/Images/a.jpg" },
+        { type: "move", from: "/r/b.pdf", to: "/r/.arch-ade-tmp-1-0" },
+        { type: "move", from: "/r/e.txt", to: "/r/b.pdf" },
+        { type: "move", from: "/r/.arch-ade-tmp-1-0", to: "/r/e.txt" },
+        { type: "trash", path: "/r/d.zip" },
+      ],
+    };
+    const r = roundFromPlan(plan, [entry("a.jpg", "image", 1), entry("b.pdf", "pdf", 2), entry("d.zip", "archive", 3), entry("e.txt", "text", 4)]);
+    expect(r.files.map((f) => [f.name, f.fate])).toEqual([["a.jpg", "moved"], ["b.pdf", "renamed"], ["d.zip", "trashed"], ["e.txt", "renamed"]]);
+  });
 });
 
 describe("settings and input", () => {

@@ -18,7 +18,7 @@ import { aiSettingsDialog, categorizeDialog } from "./ui/ai";
 import { fileByFile } from "./ui/fbf";
 import { soundMenu } from "./ui/sound";
 import { sound } from "./audio/player";
-import { arcadeSettingsSection, arcadeWanted, launchArcade, loadArcadeSettings, arcadeSettings } from "./arcade/launch";
+import { arcadeSettingsSection, arcadeWanted, launchArcade, loadArcadeSettings, arcadeSettings, onArcadeModeChange } from "./arcade/launch";
 import { roundFromPlan } from "./arcade/round";
 import type { ArcadeRound } from "./arcade/types";
 import { rulesDialog } from "./ui/rules";
@@ -211,6 +211,7 @@ search.addEventListener("input", () => {
 
 // ---------- folder loading ----------
 async function openRoot(path: string) {
+  if (path !== state.root) clearArcadeOffer();
   state.busy = true;
   say("Scanning…");
   try {
@@ -284,6 +285,7 @@ listen<ActivityEvent>("rules-activity", (ev) => {
 // ---------- operations ----------
 function afterRun(r: RunReport | null) {
   if (!r) return;
+  if (r.direction !== "apply") clearArcadeOffer();
   const verb = r.direction === "undo" ? "Undid" : r.direction === "redo" ? "Redid" : "Applied";
   if (r.error) say(`${verb} ${r.done} of ${r.total} step(s) of "${r.label}", then stopped: ${r.error}`, true);
   else say(`${verb}: ${r.label} (${r.done} step(s)${r.skipped ? `, ${r.skipped} skipped` : ""})`);
@@ -293,14 +295,26 @@ function afterRun(r: RunReport | null) {
 
 /** A round of edits just finished: offer or start a game if Arcade mode is on. */
 function arcadeRound(round: ArcadeRound) {
+  clearArcadeOffer();
   if (!arcadeWanted(round)) return;
-  if (arcadeSettings().mode === "auto") return void launchArcade(round, true);
+  const launch = (autostart: boolean) =>
+    launchArcade(round, autostart).then((ok) => {
+      if (!ok) say("Couldn't open the arcade.", true);
+      else if (!autostart) clearArcadeOffer();
+    });
+  if (arcadeSettings().mode === "auto") return void launch(true);
   const n = round.files.length;
   arcadeEl.replaceChildren(
-    h("button", { class: "primary", title: "Your processed files come back as a mini-game", onclick: () => (arcadeEl.replaceChildren(), launchArcade(round, false)) }, `Play arcade (${n} file${n === 1 ? "" : "s"})`),
-    h("button", { title: "Dismiss", onclick: () => arcadeEl.replaceChildren() }, "×"),
+    h("button", { class: "primary", title: "Your processed files come back as a mini-game", onclick: () => launch(false) }, `Play arcade (${n} file${n === 1 ? "" : "s"})`),
+    h("button", { title: "Dismiss", onclick: clearArcadeOffer }, "×"),
   );
 }
+
+/** The offer is about the latest round: undo, redo, another folder or a mode change ends it. */
+function clearArcadeOffer() {
+  arcadeEl.replaceChildren();
+}
+onArcadeModeChange((mode) => mode !== "offer" && clearArcadeOffer());
 
 function review(out: PlanOut) {
   // Files as the list knew them before the plan ran (for the arcade).
@@ -308,7 +322,11 @@ function review(out: PlanOut) {
   // "Turn off" inside the dialog reopens the same plan, now applicable.
   planReview(out, (r) => {
     afterRun(r);
-    if (r.direction === "apply" && r.done > 0) arcadeRound(roundFromPlan(out.plan, before));
+    if (r.direction !== "apply") return;
+    if (r.done === 0 || arcadeSettings().mode === "off") return;
+    // Steps run in order and stop at the first failure: only those that ran count.
+    const ran = r.error ? { ...out.plan, ops: out.plan.ops.slice(0, r.done + r.skipped) } : out.plan;
+    arcadeRound(roundFromPlan(ran, before));
   }, () => {
     toggleDryRun();
     review({ ...out, dryRun: state.dryRun });

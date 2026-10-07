@@ -9,6 +9,12 @@ import { normalizeArcade, type ArcadeSettings } from "./round";
 import type { ArcadeRound } from "./types";
 
 let current: ArcadeSettings = normalizeArcade(undefined, GAME_IDS);
+const modeListeners: ((mode: ArcadeSettings["mode"]) => void)[] = [];
+
+/** Called when the mode changes in Settings (a pending offer may no longer apply). */
+export function onArcadeModeChange(cb: (mode: ArcadeSettings["mode"]) => void) {
+  modeListeners.push(cb);
+}
 
 export function arcadeSettings(): ArcadeSettings {
   return current;
@@ -19,8 +25,10 @@ export function loadArcadeSettings(raw: unknown) {
 }
 
 function saveArcade(patch: Partial<ArcadeSettings>) {
+  const before = current.mode;
   current = normalizeArcade({ ...current, ...patch }, GAME_IDS);
   api.setSetting("arcade", current).catch(() => {});
+  if (current.mode !== before) modeListeners.forEach((f) => f(current.mode));
 }
 
 /** Whether a round should lead to a game at all. */
@@ -28,10 +36,17 @@ export function arcadeWanted(round: ArcadeRound): boolean {
   return current.mode !== "off" && round.files.length > 0;
 }
 
-/** Open the arcade for a round. `autostart` skips the game picker. */
-export async function launchArcade(round: ArcadeRound, autostart = current.mode === "auto") {
-  const { openArcade } = await import("./host");
-  openArcade(round, { game: current.game, autostart });
+/** Open the arcade for a round. `autostart` skips the game picker. False if it couldn't open. */
+export async function launchArcade(round: ArcadeRound, autostart = current.mode === "auto"): Promise<boolean> {
+  if (current.mode === "off") return false;
+  try {
+    const { openArcade } = await import("./host");
+    openArcade(round, { game: current.game, autostart });
+    return true;
+  } catch (e) {
+    console.error("arcade", e);
+    return false;
+  }
 }
 
 /** The Arcade section of Settings. */

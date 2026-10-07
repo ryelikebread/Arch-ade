@@ -91,7 +91,8 @@ export async function fileByFile(o: FbfOptions) {
   dialog.addEventListener("cancel", (ev) => ev.preventDefault()); // Esc goes through our keys
   dialog.addEventListener("close", () => {
     document.removeEventListener("keydown", onKey);
-    if (!session.done && session.decidedCount > 0) o.onRound?.(roundFromFbf(session.results()));
+    closed = true;
+    if (!session.done && !played && session.decidedCount > 0 && arcadeSettings().mode !== "off") o.onRound?.(roundFromFbf(session.results()));
     stage?.destroy();
     dialog.remove();
     if (changed) o.onChanged();
@@ -178,16 +179,23 @@ export async function fileByFile(o: FbfOptions) {
 
   // Auto mode starts a game once per finished session (not again after an undo and redo).
   let autoPlayed = false;
+  // A game was opened from this session, so closing it doesn't offer another.
+  let played = false;
+  let closed = false;
+  const play = (round: ArcadeRound, autostart: boolean) => {
+    played = true;
+    launchArcade(round, autostart).then((ok) => ok || note("Couldn't open the arcade.", true));
+  };
 
   function renderSummary() {
     const c = session.counts();
-    const round = roundFromFbf(session.results());
-    const arcade = arcadeWanted(round)
-      ? h("p", {}, h("button", { class: "primary", onclick: () => launchArcade(round, false) }, "Play arcade"), " Your processed files come back as a mini-game.")
+    const round = arcadeSettings().mode !== "off" ? roundFromFbf(session.results()) : null;
+    const arcade = round && arcadeWanted(round)
+      ? h("p", {}, h("button", { class: "primary", onclick: () => play(round, false) }, "Play arcade"), " Your processed files come back as a mini-game.")
       : null;
-    if (arcade && arcadeSettings().mode === "auto" && !autoPlayed) {
+    if (round && arcade && arcadeSettings().mode === "auto" && !autoPlayed && !closed) {
       autoPlayed = true;
-      launchArcade(round, true);
+      play(round, true);
     }
     for (const k of ["keep", "move", "rename", "trash", "delete", "skip", "back"] as const) buttons[k].disabled = true;
     slotsEl.querySelectorAll("button").forEach((b) => (b.disabled = true));
@@ -244,7 +252,8 @@ export async function fileByFile(o: FbfOptions) {
       note(String(err), true);
     } finally {
       busy = false;
-      render();
+      if (closing) dialog.close();
+      else render();
     }
   }
 
@@ -287,7 +296,8 @@ export async function fileByFile(o: FbfOptions) {
       note(String(e), true);
     } finally {
       busy = false;
-      render();
+      if (closing) dialog.close();
+      else render();
     }
   }
 
@@ -435,7 +445,14 @@ export async function fileByFile(o: FbfOptions) {
     }
   }
 
+  // Closing waits for a decision or undo in flight, so the session (and any
+  // arcade round) is final when the window goes.
+  let closing = false;
   function close() {
+    if (busy) {
+      closing = true;
+      return note("Finishing the current file…");
+    }
     dialog.close();
   }
 

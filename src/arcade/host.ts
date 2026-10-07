@@ -48,7 +48,13 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
   dialog.addEventListener("keydown", onKey);
   let stopGame: (() => void) | null = null;
 
+  // Bumped whenever the screen moves on, so a game that finishes loading
+  // after the player backed out (or picked another) is dropped.
+  let loadSeq = 0;
+
   function close() {
+    loadSeq++;
+    keyHandler = null;
     stopGame?.();
     dialog.close();
     dialog.remove();
@@ -74,6 +80,8 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
       hint.textContent = items[at].hint ?? "";
     };
     keyHandler = (ev) => {
+      // A key still held from the game (Space to fire) must not pick an item.
+      if (ev.repeat) return void ev.preventDefault();
       if (ev.key === "ArrowUp" || ev.key === "ArrowDown") at = (at + (ev.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
       else if (ev.key === "Enter" || ev.key === " ") return void (ev.preventDefault(), items[at].run());
       else if (ev.key === "Escape") return void (ev.preventDefault(), onEsc());
@@ -98,6 +106,7 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
   }
 
   function picker(start = 0) {
+    loadSeq++;
     const items = [
       ...GAMES.map((g) => ({ label: g.title, hint: g.inspiredBy, run: () => play(g) })),
       { label: "Random", hint: "Any of the four", run: () => play(randomGame()) },
@@ -115,20 +124,24 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
   // ---------- playing ----------
   async function play(entry: GameEntry) {
     stopGame?.();
+    const token = ++loadSeq;
     screen.replaceChildren(h("h2", {}, entry.title), h("p", { class: "arcade-sub" }, "Loading…"));
     keyHandler = (ev) => ev.key === "Escape" && picker();
+    const current = () => token === loadSeq && dialog.open;
     let mod: GameModule;
     try {
       mod = await entry.load();
     } catch (e) {
-      return failed(entry, `couldn't load: ${e}`);
+      if (current()) failed(entry, `couldn't load: ${e}`);
+      return;
     }
-    if (!dialog.open) return;
+    if (!current()) return;
     attempt++;
     run(entry, mod);
   }
 
   function run(entry: GameEntry, mod: GameModule) {
+    stopGame?.(); // never two games at once
     const [w, h0] = mod.size;
     const canvas = h("canvas", { class: "arcade-canvas", width: w, height: h0 });
     const g = canvas.getContext("2d")!;
@@ -177,22 +190,28 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
       return failed(entry, String(e));
     }
 
-    let timer = 0;
     let raf = 0;
     let last = 0;
+    let lastDraw = 0;
     let acc = 0;
     let paused = false;
     let hidden = document.hidden;
     let stopped = false;
 
     const halt = () => {
-      clearTimeout(timer);
       cancelAnimationFrame(raf);
-      timer = raf = 0;
+      raf = 0;
     };
     const tick = (now: number) => {
       raf = 0;
       if (stopped || paused || hidden) return;
+      // Driven by animation frames alone, skipping those that come too soon:
+      // every 2nd frame on a 60 Hz screen, so a steady 30 fps with one update each.
+      if (now - lastDraw < 1000 / FPS - 4) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      lastDraw = now;
       acc += Math.min(0.2, (now - last) / 1000);
       last = now;
       try {
@@ -215,17 +234,19 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
         stop();
         return finished(entry, mod, r);
       }
-      timer = window.setTimeout(() => (raf = requestAnimationFrame(tick)), 1000 / FPS);
+      raf = requestAnimationFrame(tick);
     };
     const resume = () => {
       halt();
       if (stopped || paused || hidden) return;
       last = performance.now();
       acc = STEP; // one update right away
+      lastDraw = 0;
       raf = requestAnimationFrame(tick);
     };
 
     const unhide = onWindowHidden((hd) => {
+      if (hd === hidden) return;
       hidden = hd;
       if (hd) {
         input.release();
@@ -233,7 +254,11 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
       } else resume();
     });
     const onUp = (ev: KeyboardEvent) => input.keyup(ev.key) && ev.preventDefault();
-    const onBlur = () => input.release();
+    // Losing focus pauses: the game can't hear the keys any more.
+    const onBlur = () => {
+      input.release();
+      if (!stopped && !paused && !hidden) showPause();
+    };
     const onMove = (ev: MouseEvent) => {
       const r = canvas.getBoundingClientRect();
       input.pointer(((ev.clientX - r.left) / r.width) * w);
@@ -285,6 +310,7 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
       draw();
       keyHandler = (ev) => {
         ev.preventDefault();
+        if (ev.repeat) return; // a held Esc or Space mustn't flip pause back and forth
         if (ev.key === "ArrowUp" || ev.key === "ArrowDown") at = (at + (ev.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
         else if (ev.key === "Enter" || ev.key === " ") return items[at][1]();
         else if (ev.key === "Escape" || ev.key === "p" || ev.key === "P") return unpause();

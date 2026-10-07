@@ -6,12 +6,19 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export function onWindowHidden(cb: (hidden: boolean) => void): () => void {
   const cleanup: (() => void)[] = [];
-  const onVis = () => cb(document.hidden);
+  // Resizes fire often; only report actual changes.
+  let last = document.hidden;
+  const report = (v: boolean) => {
+    if (v === last) return;
+    last = v;
+    cb(v);
+  };
+  const onVis = () => report(document.hidden);
   document.addEventListener("visibilitychange", onVis);
   cleanup.push(() => document.removeEventListener("visibilitychange", onVis));
   let gone = false;
   getCurrentWindow()
-    .onResized(async () => cb(document.hidden || (await getCurrentWindow().isMinimized())))
+    .onResized(async () => report(document.hidden || (await getCurrentWindow().isMinimized())))
     .then((un) => (gone ? un() : cleanup.push(un)))
     .catch(() => {});
   return () => {
