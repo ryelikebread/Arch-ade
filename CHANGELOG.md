@@ -2,6 +2,10 @@
 
 ## 2026-10-07
 
+- Phase 5: Arcade mode (off by default; Settings > Arcade mode: offer or auto-start, chosen or random game). After File by File or an applied plan, trashed/deleted files become foes (size sets toughness, type sets a trick) and kept/moved/renamed files become pickups and allies. Why: the spec's post-session mini-games, costing nothing when off.
+- Phase 5: four original mini-games, each a lazily loaded module: Undelete (first-person maze shooter), Brick Sort (brick breaker), Tidy Hop (platformer), Folder Fleet (space shooter). All art and sound generated in code, "inspired by" only. Why: the spec's four game styles without copyrighted material.
+- Phase 5: keys pressed in the arcade no longer reach File by File or the main window. Why: Esc in a game closed File by File (and the arcade) underneath instead of pausing.
+
 - Phase 4: Sound menu (Cmd/Ctrl+Shift+S) styled as an arcade options screen: music station, play/pause, music volume and mute, sound-effect volume and mute, sound test. Four built-in stations of original chiptune generated in code (CC0), plus My Music from `<app data>/music/` (mp3, m4a, ogg, wav, flac…). Why: Rye asked for background music and their own tracks.
 - Phase 4: Volcano and Space play original sound effects with each decision; skins name them in a new optional `sounds` manifest field. Audio is suspended while nothing is audible or the window is hidden. Why: Rye asked for skin sound effects with their own mute.
 

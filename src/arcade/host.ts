@@ -39,7 +39,12 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
   dialog.focus();
 
   let keyHandler: ((ev: KeyboardEvent) => void) | null = null;
-  const onKey = (ev: KeyboardEvent) => keyHandler?.(ev);
+  // Keys stay in the arcade: File by File and the main window listen on the
+  // document, and Esc or an arrow must not close or step them underneath.
+  const onKey = (ev: KeyboardEvent) => {
+    ev.stopPropagation();
+    keyHandler?.(ev);
+  };
   dialog.addEventListener("keydown", onKey);
   let stopGame: (() => void) | null = null;
 

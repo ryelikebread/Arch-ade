@@ -284,3 +284,26 @@ Cross-cutting
   directly in `<app data>/music/` (no subfolders, no symlinks, 50 MB cap) and the
   `user_music_file` command returns one track's bytes, played through a media element.
   The menu is `src/ui/sound.ts`; settings live under the `sound` key.
+
+## 12. Phase 5: Arcade mode
+
+- `src/arcade/round.ts` (pure, tested): a round is the files of a File by File session or
+  an applied plan with their fate. `cast` turns trashed/deleted files into foes (hp from
+  `strength`, log2 of size; deleted are elites) and kept/moved/renamed into friends;
+  family → ability for foes, family → perk for friends. Caps of 48/32 sample evenly by
+  size; `filler` adds non-file foes; `seedOf` makes the same round build the same level.
+- `types.ts` is the contract: a `GameModule` (id, title, "inspired by", controls, logical
+  size, `create(ctx)`) returns a `Game` with `update()`, `draw()` and `destroy()`. The
+  context gives the canvas, cast, input, seeded rng, sound effects, arcade icons and the
+  pixel font, and `end(result)`.
+- `host.ts` is the arcade window: game picker, integer-scaled canvas, fixed 30 updates/s
+  (at most 3 catch-up steps), pause overlay, result screen and best scores (`arcadeBest`
+  setting). It stops on pause, hide and close, and keeps every key inside the arcade.
+- `registry.ts` lists the games with `import()` loaders, so each game is its own chunk and
+  the host itself is loaded only when a game is offered. With the mode off nothing
+  under `src/arcade/` beyond the settings code runs. `launch.ts` holds the settings
+  (`arcade` key: off/offer/auto, game or random) and the hooks in File by File and
+  `main.ts` (after an applied plan).
+- Games live in `src/arcade/games/<id>/` with logic split from drawing so the logic is
+  tested headless (`testing.ts` harness with a null canvas). `dev/arcade.html` (Vite dev
+  only) runs any game on a sample round with a scripted key sequence for screenshots.

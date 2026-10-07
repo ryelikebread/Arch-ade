@@ -209,6 +209,40 @@ Copyrighted game soundtracks aren't included; if you own tracks you'd like to he
 them through My Music. Sound stops while the window is hidden, and the audio engine is
 suspended whenever nothing is audible.
 
+## Arcade mode
+
+Arcade mode is **off** by default: nothing of it is loaded and it costs nothing. Turn it on
+in **Settings > Arcade mode**: *Offer a game after a round of edits* adds a **Play arcade**
+button, *Start a game after a round of edits* opens the arcade straight away. A round is a
+File by File session (dry-run decisions count too, it's only a game) or a plan you
+applied. Pick a game there, or leave it on **Random game**.
+
+The files you just processed come back as the cast:
+
+- **Foes** are the files you trashed or deleted. Bigger files take more hits (1 to 10, on
+  a log scale of size); permanently deleted ones are elites with 2 extra. The file type
+  sets a trick: pictures flash, documents and sheets shield, code teleports, audio sends
+  sound waves, videos are fast, archives split in two, disk images and installers are
+  tanks.
+- **Friends** are the files you kept, moved or renamed: pickups or allies by type
+  (pictures heal, documents give armor, code is a helper bot, audio rapid fire, video
+  spread shot, archives ammo, installers power, anything else points).
+- Up to 48 foes and 32 friends take part, spread across sizes; a round with few trashed
+  files gets some generic clutter foes so there's still a game.
+
+| Game | Inspired by | Controls |
+| --- | --- | --- |
+| **Undelete** | 90s first-person maze shooters | ↑↓ walk, ←→ turn, X + ←→ strafe, Space fire |
+| **Brick Sort** | brick-breaker paddle games | ←→ or mouse move, Space or click launch, hold Space rapid fire, X spare ball |
+| **Tidy Hop** | side-scrolling platformers and kitchen stack-'em-ups | ←→ run, Space jump (hold: higher), X throw, ↑↓ ladders |
+| **Folder Fleet** | side-scrolling and formation space shooters | arrows move, Space fire (hold), X power pulse |
+
+WASD works for arrows, Z/J for Space and K/Shift for X. **Esc** (or P) pauses, with
+Resume, Restart, Other game and Close arcade. Best scores are remembered per game.
+All art and sound is original, drawn and generated in code; the games are "inspired by"
+only. Each game is its own module, loaded the first time it's played; they run at 30
+updates per second and stop while paused or the window is hidden.
+
 ## Update notice
 
 Arch-ade never checks the network. To try the update flow, put

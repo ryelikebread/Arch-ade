@@ -68,3 +68,7 @@ They're copyrighted, so Arch-ade can't ship them. The built-in stations are orig
 ## Does music use a lot of CPU?
 
 Only while it plays. The built-in songs are rendered once into a loop, and the audio engine is suspended while music is paused or muted and no effect is playing, and whenever the window is hidden.
+
+## What is Arcade mode?
+
+An optional mini-game after a round of edits: files you trashed or deleted become the enemies (bigger files are tougher) and files you kept become pickups and allies. Turn it on in **Settings > Arcade mode**. It's off by default and nothing of it loads while it's off. Playing never changes any file.

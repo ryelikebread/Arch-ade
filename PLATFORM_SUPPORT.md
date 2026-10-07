@@ -48,6 +48,7 @@ covered by CI tests and compile checks only so far).
 | Skins (canvas, 30fps cap, paused when hidden) | Full | Full | Full (verified; WebKitGTK, software rendering in CI) |
 | Built-in music and sound effects (Web Audio) | Full | Full | Full (verified; WebKitGTK plays through GStreamer) |
 | My Music folder | Full for mp3, m4a/aac, wav and flac; ogg and opus depend on the macOS version | Full (WebView2 plays all listed formats) | Partial: needs GStreamer plugins for the format (mp3 and aac are in gst-plugins-good/-bad/-libav on most distros; verified with wav) |
+| Arcade mode (canvas mini-games, 30 updates/s, loaded on demand) | Full | Full | Full (verified; all four games played in WebKitGTK) |
 | Hotkeys | Cmd | Ctrl | Ctrl |
 | Bundles | .dmg | .msi, NSIS .exe | AppImage, .deb |
 | Signing | Scripted, off until credentials | Scripted, off until credentials | n/a |

@@ -10,6 +10,7 @@
 8. **Categorize** (Cmd/Ctrl+Shift+K) suggests a folder and a clean name for each selected file. Edit or untick suggestions, then **Review plan**. It works without AI (music/video tags, your past choices, and simple keyword rules); turn on the local AI in **Settings > Local AI and categories** for smarter suggestions.
 9. **File by File** (Cmd/Ctrl+Shift+F) shows one file at a time. Press **K** keep, **M** move (or **1** to **9** for a quick folder), **R** rename, **T** trash, **→** skip, **←** back, **Cmd/Ctrl+Z** undo. Pick a **Skin** at the top for Volcano or Space animations.
 10. **Sound** (Cmd/Ctrl+Shift+S) picks a music station, plays or pauses it, and mutes the music or the skins' sound effects separately. Put your own music files in the folder **My music folder > Show** opens.
+11. **Arcade mode** is off until you turn it on in **Settings > Arcade mode**. Then, after File by File or an applied plan, the files you trashed come back as enemies and the ones you kept as pickups in one of four mini-games. **Esc** pauses.
 
 ## Rule paths
 
