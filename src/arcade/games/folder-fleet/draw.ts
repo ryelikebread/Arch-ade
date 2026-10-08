@@ -3,8 +3,9 @@
 // plain rectangles. A frame is a few hundred drawImage/fillRect calls.
 
 import type { GameContext } from "../../types";
-import { CLOAK, H, LUNGE_AT, MAX_RING_R, METER_MAX, W, foesLeft, look, lunging, type Ship, type World } from "./logic";
-import { C, PERK_COLOR, PERK_TAG, bossArt, glyphs, label, ringArt, type Art, type HullArt, type Img, type TextColor } from "./sprites";
+import { CLOAK, GUN_MAX, GUN_NAME, H, LUNGE_AT, MAX_GUN_LV, MAX_RING_R, METER_MAX, W, WEAPON_NAME, foesLeft, look, lunging, podAt, themeOf, waveHalf, type Ship, type World } from "./logic";
+import { C, PERK_COLOR, PERK_TAG, WEAPON_COLOR, WEAPON_TAG, backdrop, bossArt, glyphs, keyColor, label, ringArt, waveArt, type Art, type HullArt, type Img, type TextColor } from "./sprites";
+import { THEMES } from "./themes";
 
 type G = CanvasRenderingContext2D;
 
@@ -55,19 +56,34 @@ export function render(w: World, ctx: GameContext, art: Art | null) {
 }
 
 function stars(w: World, g: G, art: Art | null) {
-  const layers = art?.stars;
-  if (!layers || !layers[0]) {
-    g.fillStyle = C.bg;
-    g.fillRect(0, 0, W, H);
-    return;
-  }
+  const stage = w.stages[Math.min(w.stage, w.stages.length - 1)];
+  const th = THEMES[stage.theme];
+  const layers = art ? backdrop(art, stage.theme) : null;
   const speeds = [0.25, 0.7, 1.6];
-  layers.forEach((img, i) => {
-    if (!img) return;
-    const off = Math.floor((w.tick * speeds[i]) % W);
+  if (!layers || !layers[0]) {
+    g.fillStyle = th.bg;
+    g.fillRect(0, 0, W, H);
+  } else {
+    const off = Math.floor((w.scroll * speeds[0]) % W);
+    g.drawImage(layers[0], -off, 0);
+    g.drawImage(layers[0], W - off, 0);
+  }
+  // the data grid: lines that scroll with the mid layer
+  if (th.props === "grid") {
+    g.fillStyle = th.prop[0];
+    const off = (w.scroll * speeds[1]) % 32;
+    for (let x = 32 - off; x < W; x += 32) g.fillRect(Math.round(x), 11, 1, 158);
+    g.fillStyle = th.prop[1];
+    for (let y = 24; y < 168; y += 24) g.fillRect(0, y, W, 1);
+  }
+  if (!layers) return;
+  for (let i = 1; i < layers.length; i++) {
+    const img = layers[i];
+    if (!img) continue;
+    const off = Math.floor((w.scroll * speeds[i]) % W);
     g.drawImage(img, -off, 0);
     g.drawImage(img, W - off, 0);
-  });
+  }
 }
 
 function capsules(w: World, ctx: GameContext, art: Art | null) {
@@ -77,18 +93,33 @@ function capsules(w: World, ctx: GameContext, art: Art | null) {
   let best = Infinity;
   for (const c of w.capsules) {
     if (!c.on) continue;
-    const perk = c.friend.perk;
     const x = Math.round(c.x - 7);
     const y = Math.round(c.y - 6);
-    if (art?.capsuleGlow && (w.tick >> 3) % 2 === 0) g.drawImage(art.capsuleGlow, x, y);
-    blit(g, art?.capsules[perk], x, y, PERK_COLOR[perk], 14, 12);
-    icon(ctx, c.friend.file.kind, x + 3, y + 2, 1);
-    say(ctx, art, PERK_TAG[perk], x + 5, y - 6, PERK_COLOR[perk] as TextColor);
+    const glow = (w.tick >> 3) % 2 === 0;
+    if (c.weapon) {
+      // weapons: pointed capsules; a kept file still shows its icon, a drop shows the weapon's mark
+      const k = c.weapon;
+      if (art?.weaponGlow && glow) g.drawImage(art.weaponGlow, x, y);
+      blit(g, art?.weaponCapsules[k], x, y, WEAPON_COLOR[k], 14, 12);
+      if (c.friend) icon(ctx, c.friend.file.kind, x + 3, y + 2, 1);
+      else blit(g, art?.weaponMarks[k], x + 3, y + 2, WEAPON_COLOR[k], 8, 8);
+      say(ctx, art, WEAPON_TAG[k], x + 5, y - 6, WEAPON_COLOR[k]);
+    } else if (c.friend) {
+      const perk = c.friend.perk;
+      if (art?.capsuleGlow && glow) g.drawImage(art.capsuleGlow, x, y);
+      blit(g, art?.capsules[perk], x, y, PERK_COLOR[perk], 14, 12);
+      icon(ctx, c.friend.file.kind, x + 3, y + 2, 1);
+      say(ctx, art, PERK_TAG[perk], x + 5, y - 6, PERK_COLOR[perk] as TextColor);
+    }
     const d = Math.abs(c.x - p.x) + Math.abs(c.y - p.y);
     if (Math.abs(c.x - p.x) < 70 && Math.abs(c.y - p.y) < 40 && d < best) (best = d), (near = c);
   }
-  // name the nearest one once it's close
-  if (near) tag(ctx, art, near.friend.label, near.x - ctx.textWidth(near.friend.label) / 2, Math.round(near.y - 6) + 14, PERK_COLOR[near.friend.perk]);
+  // name the nearest one once it's close: the file, or the weapon a drop gives
+  if (near) {
+    const name = near.friend ? near.friend.label : WEAPON_NAME[near.weapon ?? "spread"];
+    const color = near.weapon ? WEAPON_COLOR[near.weapon] : PERK_COLOR[near.friend?.perk ?? "points"];
+    tag(ctx, art, name, near.x - ctx.textWidth(name) / 2, Math.round(near.y - 6) + 14, color);
+  }
 }
 
 /** The file's kind icon, or a plain mark when it isn't loaded (or the foe isn't a file). */
@@ -256,11 +287,33 @@ function playerShots(w: World, g: G, art: Art | null) {
   }
   for (const b of w.shots) {
     if (!b.on) continue;
-    if (b.missile) {
-      blit(g, art?.missile, b.x - 3, b.y - 1, C.orange, 6, 3);
-      g.fillStyle = (w.tick >> 1) % 2 ? C.yellow : C.red;
-      g.fillRect(Math.round(b.x - 3 - b.vx), Math.round(b.y - b.vy), 1, 1);
-    } else blit(g, b.drone ? art?.droneShot : art?.shot, b.x - 3, b.y - 1, C.yellow, 6, 3);
+    switch (b.kind) {
+      case "missile":
+        blit(g, art?.missile, b.x - 3, b.y - 1, C.orange, 6, 3);
+        g.fillStyle = (w.tick >> 1) % 2 ? C.yellow : C.red;
+        g.fillRect(Math.round(b.x - 3 - b.vx), Math.round(b.y - b.vy), 1, 1);
+        break;
+      case "seek":
+        blit(g, art?.seekShot, b.x - 3, b.y - 1, C.mint, 5, 3);
+        g.fillStyle = C.mint;
+        g.fillRect(Math.round(b.x - 3 - b.vx * 0.6), Math.round(b.y - b.vy * 0.6), 1, 1);
+        break;
+      case "wave": {
+        const h = Math.round(waveHalf(b));
+        const img = art ? waveArt(art, h) : null;
+        if (img) g.drawImage(img, Math.round(b.x - 4), Math.round(b.y) - (img.height >> 1));
+        else {
+          g.fillStyle = C.sky;
+          g.fillRect(Math.round(b.x), Math.round(b.y - h), 2, h * 2 + 1);
+        }
+        break;
+      }
+      case "pod":
+        blit(g, art?.podShot, b.x - 1, b.y - 1, C.lime, 3, 3);
+        break;
+      default:
+        blit(g, b.kind === "drone" ? art?.droneShot : art?.shot, b.x - 3, b.y - 1, C.yellow, 6, 3);
+    }
   }
 }
 
@@ -274,6 +327,12 @@ function player(w: World, g: G, art: Art | null) {
   if (p.invuln > 0 && w.phase !== "ready" && (w.tick >> 1) % 2) return;
   const x = Math.round(p.x - 9);
   const y = Math.round(p.y - 5);
+  // side pods ride above and below; they blink as they run out
+  if (p.sideT > 0 && !(p.sideT < 90 && (w.tick >> 2) % 2))
+    for (const k of [-1, 1]) {
+      const [px, py] = podAt(p, k);
+      blit(g, art?.pod, px - 3, py - 2, C.lime, 6, 4);
+    }
   // engine flame
   const f = 2 + ((w.tick >> 1) % 3);
   g.fillStyle = (w.tick >> 1) % 2 ? C.pink : C.yellow;
@@ -368,8 +427,12 @@ function hud(w: World, ctx: GameContext, art: Art | null) {
       g.fillRect(bx + 1, 3, Math.round(((bw - 2) * b.shield) / Math.max(1, b.maxShield)), 1);
     }
   } else {
-    const wave = w.phase === "warning" || w.phase === "boss" || w.phase === "won" ? "BOSS" : `WAVE ${w.wave + 1}/${w.waves.length}`;
-    say(ctx, art, wave, 150, 3, C.cyan);
+    // the stage: its number and folder title
+    const boss = w.phase === "warning" || w.phase === "boss" || w.phase === "won";
+    const wave = boss ? "BOSS" : `${w.wave + 1}/${w.waves.length}`;
+    say(ctx, art, wave, 140, 3, C.cyan);
+    const title = w.stages[boss ? w.stages.length - 1 : Math.min(w.wave, w.stages.length - 1)].title;
+    say(ctx, art, title, 140 + ctx.textWidth(wave) + 4, 3, themeOf(w).accent);
   }
 
   // bottom line: the power meter and what's active
@@ -390,17 +453,35 @@ function hud(w: World, ctx: GameContext, art: Art | null) {
     }
   }
   if (full && (w.tick >> 3) % 2 === 0) say(ctx, art, "X PULSE!", 84, 173, C.yellow);
-  let x = 122;
+  // the gun: its name, level pips and time left
+  let x = 118;
+  const gc: TextColor = p.gun === "blaster" ? C.lilac : WEAPON_COLOR[p.gun];
+  const name = GUN_NAME[p.gun];
+  say(ctx, art, name, x, 173, gc);
+  x += ctx.textWidth(name) + 2;
+  if (p.gun !== "blaster") {
+    for (let i = 0; i < MAX_GUN_LV; i++) {
+      g.fillStyle = i < p.gunLv ? gc : C.dim;
+      g.fillRect(x + i * 3, 172, 2, 3);
+    }
+    g.fillStyle = C.dim;
+    g.fillRect(x, 176, 8, 2);
+    g.fillStyle = p.gunT < 90 && (w.tick >> 2) % 2 ? C.ink : gc;
+    g.fillRect(x, 176, Math.max(1, Math.round((8 * Math.min(p.gunT, 690)) / 690)), 2);
+    x += 10;
+  }
+  x += 4;
   const boost = (letter: string, color: TextColor, t: number, max: number) => {
     say(ctx, art, letter, x, 173, color);
+    const lw = ctx.textWidth(letter);
     g.fillStyle = C.dim;
-    g.fillRect(x + 5, 175, 14, 2);
+    g.fillRect(x + lw + 1, 175, 10, 2);
     g.fillStyle = color;
-    g.fillRect(x + 5, 175, Math.max(1, Math.round((14 * Math.min(t, max)) / max)), 2);
-    x += 22;
+    g.fillRect(x + lw + 1, 175, Math.max(1, Math.round((10 * Math.min(t, max)) / max)), 2);
+    x += lw + 14;
   };
+  if (p.sideT > 0) boost(p.sideLv >= 2 ? "P2" : "P", C.lime, p.sideT, Math.min(GUN_MAX, 690));
   if (p.rapidT > 0) boost("R", C.yellow, p.rapidT, 690);
-  if (p.spreadT > 0) boost("S", C.pink, p.spreadT, 690);
   if (p.beamT > 0) boost("L", C.green, p.beamT, 210);
   for (const d of p.drones) boost("D", C.lilac, d.t, 1350);
   if (p.missiles > 0) {
@@ -415,24 +496,34 @@ function hud(w: World, ctx: GameContext, art: Art | null) {
     const tw = ctx.textWidth(s);
     g.fillStyle = C.bg;
     g.fillRect(Math.round((W - tw) / 2) - 2, 159, tw + 4, 8);
-    say(ctx, art, s, Math.round((W - tw) / 2), 160, (PERK_COLOR[w.toast.perk as keyof typeof PERK_COLOR] ?? C.ink) as TextColor);
+    say(ctx, art, s, Math.round((W - tw) / 2), 160, keyColor(w.toast.color));
   }
+}
+
+/** A stage's title card: "WAVE 2 - DOWNLOADS" in the theme's color, and the theme's name. */
+function stageTitle(w: World, ctx: GameContext, art: Art | null, i: number, y: number) {
+  const st = w.stages[Math.min(i, w.stages.length - 1)];
+  const th = THEMES[st.theme];
+  const head = i >= w.waves.length ? `BOSS - ${st.title}` : `WAVE ${i + 1} - ${st.title}`;
+  centered(ctx, art, head, y, th.accent);
+  centered(ctx, art, th.name, y + 9, C.lilac);
 }
 
 function banners(w: World, ctx: GameContext, art: Art | null) {
   const blink = (w.tick >> 3) % 2 === 0;
   switch (w.phase) {
     case "ready":
-      if (blink || w.phaseT > 30) centered(ctx, art, "READY", 70, C.yellow, 3);
-      centered(ctx, art, `WAVE 1 OF ${w.waves.length}`, 92, C.cyan);
+      if (blink || w.phaseT > 30) centered(ctx, art, "READY", 66, C.yellow, 3);
+      stageTitle(w, ctx, art, 0, 88);
       break;
     case "between":
-      centered(ctx, art, "WAVE CLEAR", 66, C.green, 2);
-      centered(ctx, art, `WAVE ${w.wave + 2} INCOMING`, 84, C.cyan);
+      centered(ctx, art, "WAVE CLEAR", 62, C.green, 2);
+      stageTitle(w, ctx, art, w.wave + 1, 80);
       break;
     case "warning":
-      if (blink) centered(ctx, art, "WARNING", 64, C.red, 3);
-      centered(ctx, art, `BIGGEST FILE: ${w.boss.label}`, 88, C.yellow);
+      if (blink) centered(ctx, art, "WARNING", 58, C.red, 3);
+      centered(ctx, art, `BIGGEST FILE: ${w.boss.label}`, 80, C.yellow);
+      stageTitle(w, ctx, art, w.waves.length, 92);
       break;
     case "won":
       centered(ctx, art, "FLEET CLEARED!", 70, C.green, 2);

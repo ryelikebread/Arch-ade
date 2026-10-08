@@ -7,7 +7,8 @@
 import { drawText, normalize, textWidth } from "../../../pixel/font";
 import { seeded } from "../../round";
 import type { Ability, Perk } from "../../types";
-import { H, MAX_RING_R, W } from "./logic";
+import { H, MAX_RING_R, W, type Weapon } from "./logic";
+import { THEMES, type ThemeId } from "./themes";
 
 export type Img = HTMLCanvasElement;
 
@@ -26,6 +27,9 @@ export const C = {
   window: "#120a22",
   panel: "#1a1030",
   dim: "#3a2f5c",
+  mint: "#5df2c2",
+  sky: "#8fb4ff",
+  lime: "#c8f060",
 } as const;
 
 /** Hull colors per ability: main, dark, highlight. */
@@ -48,6 +52,13 @@ export const PERK_COLOR: Record<Perk, string> = {
 export const PERK_TAG: Record<Perk, string> = {
   health: "+", armor: "A", ally: "D", rapid: "R", spread: "S", ammo: "M", power: "L", points: "P",
 };
+
+export const WEAPON_COLOR: Record<Weapon, TextColor> = { spread: C.pink, seeker: C.mint, wave: C.sky, side: C.lime };
+/** A one-letter tag over each weapon capsule: spread, homing, wave, pods. */
+export const WEAPON_TAG: Record<Weapon, string> = { spread: "S", seeker: "H", wave: "W", side: "P" };
+
+/** Color for a capsule key (a perk or a weapon). */
+export const keyColor = (k: string): TextColor => (WEAPON_COLOR[k as Weapon] ?? PERK_COLOR[k as Perk] ?? C.ink) as TextColor;
 
 // ---------- character grids ----------
 
@@ -354,6 +365,17 @@ const MISSILE = ["....aa.", "eebbbbr", "....aa."];
 const BULLET = [".pp.", "pwwp", "pwwp", ".pp."];
 const SHELL = [".oo.", "orro", "orro", ".oo."];
 const DEBRIS = [["gg..", "ggg.", ".gaa", "..a."], [".gg.", "gaag", ".gg.", "..g."]];
+const SEEK_SHOT = [".mm..", "mmiim", ".mm.."];
+const POD_SHOT = [".l.", "lil", ".l."];
+const POD = [".lll..", "lddlli", "lddlli", ".lll.."];
+
+/** 8x8 weapon marks, drawn in a drop's window (no file icon there). */
+const WEAPON_MARK: Record<Weapon, string[]> = {
+  spread: ["......x.", "....xx..", "..xx....", "xxxxxxxx", "..xx....", "....xx..", "......x.", "........"],
+  seeker: ["....xxx.", "......x.", ".....x.x", "....x...", "...x....", "..x.....", "xx......", "x......."],
+  wave: ["x..x..x.", ".x..x..x", ".x..x..x", ".x..x..x", ".x..x..x", ".x..x..x", "x..x..x.", "........"],
+  side: ["...xx...", "...xx...", "........", "xxxxxx..", "xxxxxxxx", "........", "...xx...", "...xx..."],
+};
 
 function capsuleGrid(): string[] {
   const g = grid(12, 10);
@@ -362,6 +384,31 @@ function capsuleGrid(): string[] {
   fill(g, 2, 1, 8, 8, "w");
   fill(g, 1, 1, 1, 2, "c");
   return pad(rowsOf(g), 1);
+}
+
+/** A weapon capsule: pointed ends, so it reads apart from the round file capsules. */
+function weaponCapsuleGrid(): string[] {
+  const g = grid(12, 10);
+  fill(g, 2, 0, 8, 10, "a");
+  fill(g, 1, 1, 10, 8, "a");
+  fill(g, 0, 3, 12, 4, "a");
+  fill(g, 2, 1, 8, 8, "w");
+  fill(g, 2, 0, 8, 1, "c");
+  return pad(rowsOf(g), 1);
+}
+
+/** A wave shot: an arc opening toward the enemy, h pixels above and below its middle. */
+function waveRows(h: number): string[] {
+  const n = h * 2 + 1;
+  const g = grid(6, n);
+  for (let j = 0; j < n; j++) {
+    const u = (j - h) / Math.max(1, h);
+    const x = Math.round(4 - u * u * 4);
+    if (g[j][x + 1] !== undefined) g[j][x + 1] = "i";
+    if (x >= 0) g[j][x] = "a";
+    if (x - 1 >= 0 && j % 2 === 0) g[j][x - 1] = "b";
+  }
+  return rowsOf(g);
 }
 
 function ringRows(r: number): string[] {
@@ -395,28 +442,66 @@ function boomFrame(k: number, n: number, size: number): string[] {
 
 // ---------- the starfield ----------
 
-function starLayer(seed: number, count: number, colors: string[], opaque: boolean, streak: number): Img | null {
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+
+/** A soft blob, ordered-dithered so it fades out at the edges (wraps sideways so the layer tiles). */
+function haze(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, color: string, strength = 22) {
+  g.fillStyle = color;
+  for (let y = Math.max(0, Math.floor(cy - ry)); y < Math.min(H, cy + ry); y++)
+    for (let x = Math.floor(cx - rx); x < cx + rx; x++) {
+      const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+      if (d < 1 && (1 - d) * strength > BAYER[(y & 3) * 4 + (x & 3)] + 4) g.fillRect((x + W) % W, y, 1, 1);
+    }
+}
+
+/** A lumpy rock, lit from the top left (dark, so it never reads as a foe or a shot). */
+function rock(g: CanvasRenderingContext2D, cx: number, cy: number, r: number, cols: string[], rnd: () => number) {
+  const bumps = Array.from({ length: 8 }, () => 0.75 + rnd() * 0.3);
+  for (let y = Math.floor(cy - r); y <= cy + r; y++)
+    for (let x = Math.floor(cx - r); x <= cx + r; x++) {
+      const dx = x + 0.5 - cx;
+      const dy = y + 0.5 - cy;
+      const a = Math.atan2(dy, dx);
+      const k = Math.floor(((a + Math.PI) / (Math.PI * 2)) * 8) % 8;
+      const d = Math.hypot(dx, dy) / (r * bumps[k]);
+      if (d > 1) continue;
+      const lit = (-dx - dy) / (r * 1.4);
+      g.fillStyle = d > 0.8 ? cols[3] : lit > 0.35 ? cols[2] : lit < -0.3 ? cols[1] : cols[0];
+      g.fillRect((x + W) % W, y, 1, 1);
+    }
+  // a crater or two
+  g.fillStyle = cols[1];
+  for (let k = 0; k < 2; k++) g.fillRect(Math.round(cx + (rnd() - 0.5) * r), Math.round(cy + (rnd() - 0.5) * r), 2, 1);
+}
+
+/** One backdrop layer for a theme: the far one is opaque (sky, haze, scenery), the others are stars (and rocks). */
+function starLayer(theme: ThemeId, seed: number, count: number, colors: string[], opaque: boolean, streak: number): Img | null {
   const s = surface(W, H);
   if (!s) return null;
+  const th = THEMES[theme];
   const rnd = seeded(seed);
   if (opaque) {
-    s.g.fillStyle = C.bg;
+    s.g.fillStyle = th.bg;
     s.g.fillRect(0, 0, W, H);
-    // a few faint nebulae, ordered-dithered so they fade out at the edges
-    const bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-    for (let k = 0; k < 3; k++) {
-      const cx = rnd() * W;
-      const cy = 30 + rnd() * (H - 60);
-      const rx = 34 + rnd() * 40;
-      const ry = 16 + rnd() * 18;
-      s.g.fillStyle = k % 2 ? "#140b26" : "#0d1029";
-      for (let y = Math.floor(cy - ry); y < cy + ry; y++)
-        for (let x = Math.floor(cx - rx); x < cx + rx; x++) {
-          const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
-          if (d < 1 && (1 - d) * 22 > bayer[(y & 3) * 4 + (x & 3)] + 4) s.g.fillRect((x + W) % W, y, 1, 1);
+    for (let k = 0; k < 3; k++) haze(s.g, rnd() * W, 30 + rnd() * (H - 60), 34 + rnd() * 40, 16 + rnd() * 18, th.haze[k % 2]);
+    if (th.props === "clouds")
+      for (let k = 0; k < 6; k++) haze(s.g, (k / 6) * W + rnd() * 30, 24 + rnd() * (H - 48), 40 + rnd() * 34, 18 + rnd() * 20, th.prop[k % th.prop.length], 26);
+    if (th.props === "bands")
+      // aurora: wavy curtains across the sky, brightest at their middle
+      th.prop.forEach((col, k) => {
+        s.g.fillStyle = col;
+        const base = 34 + k * 40;
+        for (let x = 0; x < W; x++) {
+          const mid = base + Math.sin((x / W) * Math.PI * 4 + k * 2) * 10 + Math.sin((x / W) * Math.PI * 10) * 3;
+          for (let y = Math.floor(mid - 14); y < mid + 14; y++) {
+            const d = 1 - Math.abs(y - mid) / 14;
+            if (y >= 0 && y < H && d * 18 > BAYER[(y & 3) * 4 + (x & 3)] + 2) s.g.fillRect(x, y, 1, 1);
+          }
         }
-    }
+      });
   }
+  if (!opaque && th.props === "rocks" && streak === 1)
+    for (let k = 0; k < 7; k++) rock(s.g, (k / 7) * W + rnd() * 20, 22 + rnd() * (H - 44), 4 + rnd() * 7, th.prop, rnd);
   for (let i = 0; i < count; i++) {
     s.g.fillStyle = colors[Math.floor(rnd() * colors.length)];
     s.g.fillRect(Math.floor(rnd() * W), Math.floor(rnd() * H), streak, 1);
@@ -424,10 +509,26 @@ function starLayer(seed: number, count: number, colors: string[], opaque: boolea
   return s.c;
 }
 
+/** A theme's three backdrop layers (far, mid, near), made the first time the theme shows. */
+export function backdrop(art: Art, theme: ThemeId): (Img | null)[] {
+  let layers = art.backdrops[theme];
+  if (!layers) {
+    const th = THEMES[theme];
+    const seed = THEMES[theme].name.length * 7;
+    layers = [
+      starLayer(theme, 11 + seed, th.props === "grid" ? 50 : 90, th.far, true, 1),
+      starLayer(theme, 23 + seed, 50, th.mid, false, 1),
+      starLayer(theme, 37 + seed, 22, th.near, false, 2),
+    ];
+    art.backdrops[theme] = layers;
+  }
+  return layers;
+}
+
 // ---------- text ----------
 
 const CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,-_:!?'()/&+#@[]";
-export const TEXT_COLORS = [C.ink, C.yellow, C.cyan, C.pink, C.green, C.red, C.lilac, C.orange, C.dim] as const;
+export const TEXT_COLORS = [C.ink, C.yellow, C.cyan, C.pink, C.green, C.red, C.lilac, C.orange, C.dim, C.mint, C.sky, C.lime] as const;
 export type TextColor = (typeof TEXT_COLORS)[number];
 
 /** All glyphs in every HUD color, so a string is one drawImage per letter. */
@@ -468,11 +569,20 @@ export interface Art {
   debris: (Img | null)[];
   capsules: Record<Perk, Img | null>;
   capsuleGlow: Img | null;
+  weaponCapsules: Record<Weapon, Img | null>;
+  weaponGlow: Img | null;
+  weaponMarks: Record<Weapon, Img | null>;
+  seekShot: Img | null;
+  podShot: Img | null;
+  pod: Img | null;
+  /** Wave shots by half-height, made the first time each size is needed. */
+  waves: (Img | null | undefined)[];
   /** Sound rings by radius, made the first time each size is needed. */
   rings: (Img | null | undefined)[];
   boomSmall: (Img | null)[];
   boomBig: (Img | null)[];
-  stars: (Img | null)[];
+  /** Backdrop layers per theme, made the first time each theme shows. */
+  backdrops: Partial<Record<ThemeId, (Img | null)[]>>;
   atlas: Img | null;
   labels: Map<string, Img | null>;
 }
@@ -496,6 +606,14 @@ export function makeArt(): Art | null {
   const capsules = {} as Record<Perk, Img | null>;
   const cap = capsuleGrid();
   for (const p of perks) capsules[p] = paint(cap, { a: PERK_COLOR[p], w: C.window, c: C.ink });
+  const wcap = weaponCapsuleGrid();
+  const weapons: Weapon[] = ["spread", "seeker", "wave", "side"];
+  const weaponCapsules = {} as Record<Weapon, Img | null>;
+  const weaponMarks = {} as Record<Weapon, Img | null>;
+  for (const k of weapons) {
+    weaponCapsules[k] = paint(wcap, { a: WEAPON_COLOR[k], w: C.window, c: C.ink });
+    weaponMarks[k] = paint(WEAPON_MARK[k], { x: WEAPON_COLOR[k] });
+  }
   return {
     hulls,
     minis,
@@ -512,14 +630,17 @@ export function makeArt(): Art | null {
     debris: DEBRIS.map((d) => paint(d, { g: "#8f93b5", a: C.orange })),
     capsules,
     capsuleGlow: paint(outline(cap, "o").map((r) => r.replace(/[^o]/g, ".")), { o: C.ink }),
+    weaponCapsules,
+    weaponGlow: paint(outline(wcap, "o").map((r) => r.replace(/[^o]/g, ".")), { o: C.ink }),
+    weaponMarks,
+    seekShot: paint(SEEK_SHOT, { m: C.mint, i: C.ink }),
+    podShot: paint(POD_SHOT, { l: C.lime, i: C.ink }),
+    pod: paint(POD, { l: C.lime, d: "#4a6a1a", i: C.ink }),
+    waves: [],
     rings: [],
     boomSmall: Array.from({ length: 5 }, (_, k) => paint(boomFrame(k, 5, 16), { r: C.red, y: C.yellow, i: C.ink })),
     boomBig: Array.from({ length: 8 }, (_, k) => paint(boomFrame(k, 8, 36), { r: C.red, y: C.orange, i: C.yellow })),
-    stars: [
-      starLayer(11, 90, ["#2c2550", "#3a3266", "#4a3f7a"], true, 1),
-      starLayer(23, 50, [C.lilac, "#7a6aa8", "#5a8aa8"], false, 1),
-      starLayer(37, 22, [C.ink, C.cyan, "#ffe9a8"], false, 2),
-    ],
+    backdrops: {},
     atlas: glyphAtlas(),
     labels: new Map(),
   };
@@ -541,6 +662,17 @@ export function ringArt(art: Art, r: number): Img | null {
   if (img === undefined) {
     img = paint(ringRows(k), { a: C.green, c: "#e0ffe8", b: "#1f6e45" });
     art.rings[k] = img;
+  }
+  return img;
+}
+
+/** A wave shot with half-height h. */
+export function waveArt(art: Art, h: number): Img | null {
+  const k = Math.max(2, Math.min(30, Math.round(h)));
+  let img = art.waves[k];
+  if (img === undefined) {
+    img = paint(waveRows(k), { a: C.sky, i: C.ink, b: "#3a5aa8" });
+    art.waves[k] = img;
   }
   return img;
 }
@@ -570,4 +702,7 @@ export function glyphs(art: Art, g: CanvasRenderingContext2D, s: string, x: numb
 }
 
 /** For tests: every hand-drawn grid is rectangular. */
-export const _gridsForTest = { PLAYER, LIFE, DRONE, SHOT, DRONE_SHOT, MISSILE, BULLET, SHELL, DEBRIS0: DEBRIS[0], DEBRIS1: DEBRIS[1] };
+export const _gridsForTest = {
+  PLAYER, LIFE, DRONE, SHOT, DRONE_SHOT, MISSILE, BULLET, SHELL, DEBRIS0: DEBRIS[0], DEBRIS1: DEBRIS[1], SEEK_SHOT, POD_SHOT, POD,
+  ...WEAPON_MARK, WAVE3: waveRows(3), WAVE23: waveRows(23), WCAP: weaponCapsuleGrid(),
+};

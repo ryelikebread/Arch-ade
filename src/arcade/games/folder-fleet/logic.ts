@@ -6,6 +6,7 @@
 import type { SfxName } from "../../../audio/sfx";
 import { MAX_FRIENDS, filler } from "../../round";
 import type { Ability, Cast, Foe, Friend, GameResult, Input } from "../../types";
+import { THEMES, pickThemes, titleOf, type Theme, type ThemeId } from "./themes";
 
 export const W = 320;
 export const H = 180;
@@ -19,9 +20,7 @@ export const MAX_WAVES = 4;
 export const MAX_LIVES = 6;
 export const MAX_ARMOR = 5;
 const END_DELAY = 70;
-const COLS = 3;
-const ROWS = 4;
-const SLOTS = COLS * ROWS;
+const SLOTS = 12;
 const BOSS_X = 262;
 /** Every capsule drifts left at the same pace, so they don't pile up. */
 const CAPSULE_VX = -0.5;
@@ -37,6 +36,12 @@ const MAX_PARTS = 140;
 const MAX_CAPSULES = 8;
 const MAX_BOOMS = 24;
 const MAX_POPS = 8;
+/** A weapon drops from every this many ships beaten (when none is already on screen). */
+export const DROP_EVERY = 7;
+/** How long a gun or the side pods last, before the file's power adds to it, and the most they can bank. */
+export const GUN_TICKS = 540;
+export const GUN_MAX = 1500;
+export const MAX_GUN_LV = 3;
 
 /** Hitbox sizes; the sprites are a little bigger. */
 export const SIZE = { ship: [18, 12], tank: [24, 16], mini: [10, 8], boss: [36, 28] } as const;
@@ -99,6 +104,8 @@ export interface Ship {
   hitT: number;
   carries: Friend | null;
   pulseId: number;
+  /** The last wave shot that hit it (a wave hits each ship once). */
+  waveHit: number;
 }
 
 export interface Drone {
@@ -119,8 +126,13 @@ export interface Player {
   volley: number;
   rapidCd: number;
   rapidT: number;
-  spreadT: number;
-  spreadWays: number;
+  /** The main gun, its level (1..3) and ticks left (back to the blaster at 0). */
+  gun: Gun;
+  gunLv: number;
+  gunT: number;
+  /** Side pods: ticks left and level (1: diagonal shots, 2: also backward). */
+  sideT: number;
+  sideLv: number;
   beamT: number;
   beaming: boolean;
   missiles: number;
@@ -130,6 +142,9 @@ export interface Player {
   dy: number;
 }
 
+/** bolt: the main gun; drone/pod: helpers' shots; missile and seek: homing; wave: a piercing arc. */
+export type ShotKind = "bolt" | "drone" | "pod" | "missile" | "seek" | "wave";
+
 export interface Shot {
   on: boolean;
   x: number;
@@ -137,10 +152,12 @@ export interface Shot {
   vx: number;
   vy: number;
   dmg: number;
-  missile: boolean;
-  drone: boolean;
+  kind: ShotKind;
   target: number;
   t: number;
+  /** A wave shot's full half-height, and its id (so it hits each ship once). */
+  size: number;
+  id: number;
 }
 
 export interface FoeShot {
@@ -166,9 +183,18 @@ export interface Ring {
   max: number;
 }
 
+/** The main guns. The blaster is what you start with; the rest come from pickups and time out. */
+export type Gun = "blaster" | "spread" | "seeker" | "wave";
+/** Weapon pickups: a gun, or the side pods (an add-on that works with any gun). */
+export type Weapon = "spread" | "seeker" | "wave" | "side";
+export const WEAPONS: Weapon[] = ["spread", "seeker", "wave", "side"];
+
 export interface Capsule {
   on: boolean;
-  friend: Friend;
+  /** The kept file it carries, or null for a weapon dropped by a beaten ship. */
+  friend: Friend | null;
+  /** The weapon it gives (spread and everything-else files, and drops), or null. */
+  weapon: Weapon | null;
   x: number;
   y: number;
   base: number;
@@ -207,6 +233,12 @@ export interface Slot {
   carries: Friend | null;
 }
 
+/** A stage: a wave, or the boss at the end. */
+export interface Stage {
+  title: string;
+  theme: ThemeId;
+}
+
 export interface World {
   tick: number;
   phase: Phase;
@@ -236,7 +268,18 @@ export interface World {
   /** How many of them drift in during this stage. */
   driftLeft: number;
   pulse: { on: boolean; x: number; y: number; r: number; id: number };
-  toast: { text: string; t: number; perk: string };
+  toast: { text: string; t: number; color: string };
+  /** One per wave, then the boss: folder titles and themes. */
+  stages: Stage[];
+  /** The stage on screen (it changes mid-way through the break before the next one). */
+  stage: number;
+  /** How far the backdrop has scrolled (it speeds up between stages). */
+  scroll: number;
+  /** Weapons to come, shuffled; drops and everything-else files take the next one. */
+  bag: Weapon[];
+  /** Ships beaten since the last weapon drop. */
+  sinceDrop: number;
+  nextShotId: number;
   /** Sounds asked for this tick; index.ts plays them. */
   sounds: SfxName[];
   lastSound: Partial<Record<SfxName, number>>;
@@ -302,8 +345,16 @@ export function buildWaves(cast: Cast, rng: () => number): { boss: Foe; waves: S
   return { boss, waves, total: n + 1, drift };
 }
 
-export function newWorld(cast: Cast, rng: () => number): World {
+/** Stage titles cycle through the round's folders; themes are picked at random. */
+export function buildStages(waves: number, folders: string[], rng: () => number): Stage[] {
+  const names = folders.length ? folders : ["Files"];
+  const themes = pickThemes(waves + 1, rng);
+  return themes.map((theme, i) => ({ title: titleOf(names[i % names.length]), theme }));
+}
+
+export function newWorld(cast: Cast, rng: () => number, folders: string[] = ["Files"]): World {
   const { boss, waves, total, drift } = buildWaves(cast, rng);
+  const stages = buildStages(waves.length, folders, rng);
   const w: World = {
     tick: 0,
     phase: "ready",
@@ -320,8 +371,8 @@ export function newWorld(cast: Cast, rng: () => number): World {
     nextId: 1,
     diveT: 150,
     player: {
-      x: 40, y: (TOP + BOTTOM) / 2, lives: 3, armor: 0, invuln: 0, fireCd: 0, volley: 0, rapidCd: 5, rapidT: 0, spreadT: 0, spreadWays: 1,
-      beamT: 0, beaming: false, missiles: 0, missileCd: 0, drones: [], dy: 0,
+      x: 40, y: (TOP + BOTTOM) / 2, lives: 3, armor: 0, invuln: 0, fireCd: 0, volley: 0, rapidCd: 5, rapidT: 0,
+      gun: "blaster", gunLv: 1, gunT: 0, sideT: 0, sideLv: 0, beamT: 0, beaming: false, missiles: 0, missileCd: 0, drones: [], dy: 0,
     },
     shots: [],
     foeShots: [],
@@ -334,7 +385,13 @@ export function newWorld(cast: Cast, rng: () => number): World {
     driftT: 0,
     driftLeft: 0,
     pulse: { on: false, x: 0, y: 0, r: 0, id: 0 },
-    toast: { text: "", t: 0, perk: "" },
+    toast: { text: "", t: 0, color: "" },
+    stages,
+    stage: 0,
+    scroll: 0,
+    bag: [],
+    sinceDrop: 0,
+    nextShotId: 1,
     sounds: [],
     lastSound: {},
     result: null,
@@ -364,17 +421,24 @@ export function play(w: World, name: SfxName) {
   w.sounds.push(name);
 }
 
-/** Formation slots: three columns of four rows that sway, each column a beat behind the last. */
+/** The theme of the stage on screen. */
+export const themeOf = (w: World): Theme => THEMES[w.stages[Math.min(w.stage, w.stages.length - 1)].theme];
+/** The theme the current wave's formation uses. */
+const waveTheme = (w: World): Theme => THEMES[w.stages[Math.min(w.wave, w.stages.length - 1)].theme];
+
+/** Formation slots: the wave's theme sets where they are and how they sway. */
+export function slotAt(t: Theme, slot: number, tick: number): [number, number] {
+  const [bx, by] = t.slots[slot % t.slots.length];
+  const s = t.sway;
+  return [bx + Math.sin(tick * 0.021 + by * s.px) * s.ax, by + Math.sin(tick * 0.04 + bx * s.py) * s.ay];
+}
+
 export function slotX(w: World, slot: number): number {
-  const col = slot % COLS;
-  const row = Math.floor(slot / COLS);
-  return 222 + col * 32 + Math.sin(w.tick * 0.021 + row) * 6;
+  return slotAt(waveTheme(w), slot, w.tick)[0];
 }
 
 export function slotY(w: World, slot: number): number {
-  const col = slot % COLS;
-  const row = Math.floor(slot / COLS);
-  return 42 + row * 31 + Math.sin(w.tick * 0.04 + col * 0.9) * 12;
+  return slotAt(waveTheme(w), slot, w.tick)[1];
 }
 
 export const canFire = (w: World) => w.phase === "play" || w.phase === "boss";
@@ -402,12 +466,13 @@ function makeShip(w: World, foe: Foe, kind: ShipKind, rng: () => number): Ship {
     state: "wait", t: 0, delay: 0, slot: 0, sx: 0, sy: 0, cx: 0, cy: 0, dur: 60,
     angle: Math.PI, turn: 0, vx: 0, vy: 0, speed, shot: false,
     cloak: Math.floor(rng() * CLOAK.cycle), warp: 0, warpT: 90 + Math.floor(rng() * 120), sonicT: 90 + Math.floor(rng() * 120),
-    fireT: 90 + Math.floor(rng() * 200), lunge: 0, splits: 0, hitT: 0, carries: null, pulseId: 0,
+    fireT: 90 + Math.floor(rng() * 200), lunge: 0, splits: 0, hitT: 0, carries: null, pulseId: 0, waveHit: 0,
   };
 }
 
 function startWave(w: World, n: number, rng: () => number, firstDelay = 0) {
   w.wave = n;
+  w.stage = n;
   w.ships = w.ships.filter((s) => s.on);
   const slots = Array.from({ length: SLOTS }, (_, i) => i);
   for (let i = slots.length - 1; i > 0; i--) {
@@ -415,17 +480,12 @@ function startWave(w: World, n: number, rng: () => number, firstDelay = 0) {
     [slots[i], slots[j]] = [slots[j], slots[i]];
   }
   let prev: Ship | null = null;
+  const theme = waveTheme(w);
   w.waves[n].forEach((it, i) => {
     const s = makeShip(w, it.foe, "ship", rng);
     s.carries = it.carries;
     s.slot = slots[i % SLOTS];
-    // groups of four swoop in from the top right, then the bottom right,
-    // staying on the right half of the screen
-    const fromTop = Math.floor(i / 4) % 2 === 0;
-    s.sx = W + 16;
-    s.sy = fromTop ? TOP + 6 : BOTTOM - 6;
-    s.cx = 205;
-    s.cy = fromTop ? BOTTOM - 10 : TOP + 10;
+    entry(theme, s, i);
     s.dur = s.ability === "fast" ? 50 : s.ability === "tank" ? 95 : 72;
     // a beat behind the one ahead (more next to a big tank), never catching up with a slow one
     const gap = prev && (prev.ability === "tank" || s.ability === "tank") ? 16 : 9;
@@ -437,6 +497,48 @@ function startWave(w: World, n: number, rng: () => number, firstDelay = 0) {
   // this wave's share of the drifting capsules (the boss gets a share too)
   w.driftLeft = Math.ceil(w.drift.length / (w.waves.length - n + 1));
   w.driftT = 60;
+}
+
+/** Where a ship flies in from (s) and the curve it takes (c); every path stays on the right half of the screen. */
+function entry(theme: Theme, s: Ship, i: number) {
+  const mid = (TOP + BOTTOM) / 2;
+  const [bx, by] = theme.slots[s.slot];
+  s.sx = W + 16;
+  switch (theme.entry) {
+    case "corners": {
+      // groups of four swoop in from the top right, then the bottom right
+      const fromTop = Math.floor(i / 4) % 2 === 0;
+      s.sy = fromTop ? TOP + 6 : BOTTOM - 6;
+      s.cx = 205;
+      s.cy = fromTop ? BOTTOM - 10 : TOP + 10;
+      break;
+    }
+    case "split":
+      // out of the middle, looping up or down
+      s.sy = mid + (i % 2 ? 12 : -12);
+      s.cx = 198;
+      s.cy = i % 2 ? BOTTOM - 8 : TOP + 8;
+      break;
+    case "march":
+      // straight in along its own row
+      s.sy = by;
+      s.cx = W - 10;
+      s.cy = by;
+      break;
+    case "drop":
+      // in over the top and bottom edges, curving through the middle
+      s.sx = Math.min(W - 12, bx + 24);
+      s.sy = i % 2 ? BOTTOM + 14 : TOP - 14;
+      s.cx = 200;
+      s.cy = mid;
+      break;
+    case "weave":
+      // corners, one at a time
+      s.sy = i % 2 ? TOP + 4 : BOTTOM - 4;
+      s.cx = 198;
+      s.cy = mid;
+      break;
+  }
 }
 
 function spawnBoss(w: World, rng: () => number) {
@@ -549,12 +651,38 @@ function pop(w: World, x: number, y: number, text: string) {
   p.text = text;
 }
 
-/** A capsule for a kept file. Each friend makes one, so the pool never runs out. */
-function dropCapsule(w: World, friend: Friend, x: number, y: number) {
-  const c = take(w.capsules, MAX_FRIENDS, () => ({ on: false, friend, x: 0, y: 0, base: 0, vx: 0, t: 0 }));
+/** The next weapon from the shuffled bag (every weapon comes round before any repeats). */
+export function nextWeapon(w: World, rng: () => number): Weapon {
+  if (!w.bag.length) {
+    w.bag = WEAPONS.slice();
+    for (let i = w.bag.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [w.bag[i], w.bag[j]] = [w.bag[j], w.bag[i]];
+    }
+  }
+  return w.bag.shift()!;
+}
+
+/** What weapon a kept file's capsule gives: spread files the spread gun, everything-else files the next new weapon. */
+function weaponFor(w: World, friend: Friend, rng: () => number): Weapon | null {
+  if (friend.perk === "spread") return "spread";
+  if (friend.perk === "points") {
+    const n = nextWeapon(w, rng);
+    return n === "spread" ? nextWeapon(w, rng) : n;
+  }
+  return null;
+}
+
+/**
+ * A capsule for a kept file (or, with no friend, a weapon a beaten ship
+ * dropped). Each friend makes one, so the pool never runs out.
+ */
+function dropCapsule(w: World, friend: Friend | null, x: number, y: number, weapon: Weapon | null) {
+  const c = take(w.capsules, MAX_FRIENDS + MAX_CAPSULES, () => ({ on: false, friend, weapon, x: 0, y: 0, base: 0, vx: 0, t: 0 }));
   if (!c) return;
   c.on = true;
   c.friend = friend;
+  c.weapon = weapon;
   c.x = x;
   c.y = clamp(y, TOP + 8, BOTTOM - 8);
   c.base = c.y;
@@ -569,7 +697,7 @@ function driftIn(w: World, friend: Friend, rng: () => number) {
     y = TOP + 20 + rng() * (BOTTOM - TOP - 40);
     if (!w.capsules.some((c) => c.on && c.x > W - 70 && Math.abs(c.base - y) < 22)) break;
   }
-  dropCapsule(w, friend, W + 8, y);
+  dropCapsule(w, friend, W + 8, y, weaponFor(w, friend, rng));
 }
 
 // ---------- damage ----------
@@ -620,8 +748,12 @@ function kill(w: World, s: Ship, rng: () => number) {
   w.score += pts;
   pop(w, s.x, s.y - 10, String(pts));
   if (s.carries) {
-    dropCapsule(w, s.carries, s.x, s.y);
+    dropCapsule(w, s.carries, s.x, s.y, weaponFor(w, s.carries, rng));
     s.carries = null;
+  } else if (s.kind === "ship" && ++w.sinceDrop >= DROP_EVERY && s.x > 70 && !w.capsules.some((c) => c.on && !c.friend)) {
+    // now and then a beaten ship leaves a weapon behind
+    w.sinceDrop = 0;
+    dropCapsule(w, null, s.x, s.y, nextWeapon(w, rng));
   }
   // split: two minis fly on; tank: bursts into debris that hurts
   if (s.ability === "split" && s.kind === "ship") {
@@ -644,7 +776,7 @@ function kill(w: World, s: Ship, rng: () => number) {
     sparks(w, s.x, s.y, s.ability === "tank" ? 40 : 24, 0, rng, 3);
     play(w, "rumble");
     // kept files still waiting float in now (only when the boss went down fast)
-    w.drift.forEach((f, k) => dropCapsule(w, f, W - 14, TOP + 16 + ((k + 0.5) / w.drift.length) * (BOTTOM - TOP - 32)));
+    w.drift.forEach((f, k) => dropCapsule(w, f, W - 14, TOP + 16 + ((k + 0.5) / w.drift.length) * (BOTTOM - TOP - 32), weaponFor(w, f, rng)));
     w.drift.length = 0;
   }
 }
@@ -661,6 +793,11 @@ export function hurt(w: World, rng: () => number) {
   }
   p.lives--;
   p.invuln = 100;
+  // a lost life costs a gun level (the last level drops back to the blaster)
+  if (p.gun !== "blaster") {
+    if (p.gunLv > 1) p.gunLv--;
+    else (p.gun = "blaster"), (p.gunT = 0);
+  }
   boom(w, p.x, p.y, false);
   sparks(w, p.x, p.y, 12, 3, rng, 2);
   play(w, "hurt");
@@ -721,9 +858,7 @@ export function applyPerk(w: World, f: Friend): string {
       p.rapidCd = Math.min(p.rapidCd, n >= 6 ? 4 : 5);
       return "RAPID FIRE";
     case "spread":
-      p.spreadT = Math.min(1500, p.spreadT + 200 + n * 36);
-      p.spreadWays = Math.max(p.spreadWays, n >= 5 ? 3 : 2);
-      return p.spreadWays === 3 ? "TRIPLE SHOT" : "DOUBLE SHOT";
+      return applyWeapon(w, "spread", n);
     case "ammo": {
       const add = 2 + n;
       p.missiles = Math.min(30, p.missiles + add);
@@ -738,17 +873,61 @@ export function applyPerk(w: World, f: Friend): string {
   }
 }
 
+export const GUN_NAME: Record<Gun, string> = { blaster: "BLASTER", spread: "SPREAD", seeker: "SEEKER", wave: "WAVE" };
+export const WEAPON_NAME: Record<Weapon, string> = { spread: "SPREAD", seeker: "SEEKER", wave: "WAVE GUN", side: "SIDE PODS" };
+const SPREAD_NAME = ["", "DOUBLE SHOT", "TRIPLE SHOT", "FIVE-WAY"];
+
+/**
+ * Pick up a weapon with power 1..10. Guns replace each other: the same gun
+ * again goes up a level (to 3) and gets more time; a new gun swaps in at
+ * your level (a strong file starts at 2). The side pods are an add-on that
+ * fires along with any gun; a second set adds backward shots. Rapid fire,
+ * the laser, missiles and drones all work on top. Returns the toast text.
+ */
+export function applyWeapon(w: World, weapon: Weapon, power: number): string {
+  const p = w.player;
+  const time = GUN_TICKS + power * 30;
+  if (weapon === "side") {
+    p.sideLv = p.sideT > 0 ? 2 : 1;
+    p.sideT = Math.min(GUN_MAX, p.sideT + time);
+    return p.sideLv === 2 ? "SIDE PODS 2" : "SIDE PODS";
+  }
+  const base = power >= 5 ? 2 : 1;
+  if (p.gun === weapon) {
+    p.gunLv = Math.min(MAX_GUN_LV, Math.max(base, p.gunLv + 1));
+    p.gunT = Math.min(GUN_MAX, p.gunT + time);
+  } else {
+    p.gunLv = p.gun === "blaster" ? base : Math.max(base, p.gunLv);
+    p.gun = weapon;
+    p.gunT = Math.min(GUN_MAX, time);
+  }
+  return weapon === "spread" ? SPREAD_NAME[p.gunLv] : `${GUN_NAME[weapon]} ${p.gunLv}`;
+}
+
+/** The toast color for a capsule (draw.ts maps these keys to colors). */
+export const capsuleKey = (c: Pick<Capsule, "friend" | "weapon">): string => c.weapon ?? c.friend?.perk ?? "points";
+
 function collect(w: World, c: Capsule, rng: () => number) {
   c.on = false;
-  w.collected++;
-  w.meter = Math.min(METER_MAX, w.meter + (c.friend.power >= 7 ? 2 : 1));
   w.score += 50;
-  const what = applyPerk(w, c.friend);
-  w.toast.text = `${c.friend.label}: ${what}`;
+  const f = c.friend;
+  let what: string;
+  if (f) {
+    w.collected++;
+    w.meter = Math.min(METER_MAX, w.meter + (f.power >= 7 ? 2 : 1));
+    // a spread file's perk is the spread gun; an everything-else file gives its points and a weapon
+    what = applyPerk(w, f);
+    if (c.weapon && f.perk !== "spread") what = `${applyWeapon(w, c.weapon, f.power)} ${what}`;
+    w.toast.text = `${f.label}: ${what}`;
+  } else {
+    w.meter = Math.min(METER_MAX, w.meter + 0.5);
+    what = applyWeapon(w, c.weapon ?? "spread", 4);
+    w.toast.text = what;
+  }
   w.toast.t = 100;
-  w.toast.perk = c.friend.perk;
+  w.toast.color = capsuleKey(c);
   sparks(w, c.x, c.y, 8, 4, rng);
-  play(w, c.friend.perk === "points" ? "coin" : "powerup");
+  play(w, c.weapon ? "powerup" : f?.perk === "points" ? "coin" : "powerup");
 }
 
 // ---------- the tick ----------
@@ -776,7 +955,11 @@ export function step(w: World, input: Input, rng: () => number) {
 
   if (p.invuln > 0) p.invuln--;
   if (p.rapidT > 0 && --p.rapidT === 0) p.rapidCd = 5;
-  if (p.spreadT > 0 && --p.spreadT === 0) p.spreadWays = 1;
+  if (p.gunT > 0 && --p.gunT === 0) (p.gun = "blaster"), (p.gunLv = 1);
+  if (p.sideT > 0 && --p.sideT === 0) p.sideLv = 0;
+  // the backdrop scrolls, faster through the break between stages
+  const warp = w.phase === "between" ? Math.sin((Math.PI * Math.min(60, w.phaseT)) / 60) : w.phase === "warning" ? Math.sin((Math.PI * Math.min(80, w.phaseT)) / 80) : 0;
+  w.scroll += 1 + warp * 6;
   if (p.beamT > 0 && !p.beaming) p.beamT = Math.max(0, p.beamT - 0.25);
   if (w.toast.t > 0) w.toast.t--;
 
@@ -802,19 +985,69 @@ function movePlayer(w: World, input: Input) {
   if (p.drones.some((d) => d.t <= 0)) p.drones = p.drones.filter((d) => d.t > 0);
 }
 
-function shot(w: World, x: number, y: number, vx: number, vy: number, missile = false, drone = false) {
-  const s = take(w.shots, MAX_SHOTS, () => ({ on: false, x: 0, y: 0, vx: 0, vy: 0, dmg: 1, missile: false, drone: false, target: -1, t: 0 }));
+function shot(w: World, x: number, y: number, vx: number, vy: number, kind: ShotKind = "bolt", size = 0) {
+  const s = take(w.shots, MAX_SHOTS, () => ({ on: false, x: 0, y: 0, vx: 0, vy: 0, dmg: 1, kind: "bolt" as ShotKind, target: -1, t: 0, size: 0, id: 0 }));
   if (!s) return;
   s.on = true;
   s.x = x;
   s.y = y;
   s.vx = vx;
   s.vy = vy;
-  s.dmg = missile ? 2 : 1;
-  s.missile = missile;
-  s.drone = drone;
+  s.dmg = kind === "missile" ? 2 : 1;
+  s.kind = kind;
   s.target = -1;
   s.t = 0;
+  s.size = size;
+  s.id = w.nextShotId++;
+}
+
+/** Ticks between shots for each gun (rapid fire cuts it). */
+const GUN_CD: Record<Gun, number> = { blaster: 8, spread: 8, seeker: 10, wave: 13 };
+
+/** A wave shot's half-height right now: it opens up as it flies. */
+export const waveHalf = (b: Shot) => Math.min(b.size, 3 + b.t * 1.5);
+
+/** The main gun's volley. */
+function gunVolley(w: World) {
+  const p = w.player;
+  const x = p.x + 9;
+  const lv = p.gunLv;
+  switch (p.gun) {
+    case "blaster":
+      shot(w, x, p.y, 7, 0);
+      break;
+    case "spread":
+      if (lv === 1) {
+        shot(w, x, p.y - 3, 7, 0);
+        shot(w, x, p.y + 3, 7, 0);
+      } else {
+        shot(w, x, p.y, 7, 0);
+        shot(w, x - 1, p.y - 2, 6.8, -1.1);
+        shot(w, x - 1, p.y + 2, 6.8, 1.1);
+        if (lv >= 3) {
+          shot(w, x - 2, p.y - 3, 6.4, -2.2);
+          shot(w, x - 2, p.y + 3, 6.4, 2.2);
+        }
+      }
+      break;
+    case "seeker":
+      // shots that bend toward the nearest ship
+      if (lv === 2) {
+        shot(w, x, p.y - 3, 6, -0.4, "seek");
+        shot(w, x, p.y + 3, 6, 0.4, "seek");
+      } else {
+        shot(w, x, p.y, 6, 0, "seek");
+        if (lv >= 3) {
+          shot(w, x - 2, p.y - 4, 5.6, -1.4, "seek");
+          shot(w, x - 2, p.y + 4, 5.6, 1.4, "seek");
+        }
+      }
+      break;
+    case "wave":
+      // a slower arc that opens up and passes through everything in its way
+      shot(w, x, p.y, 4.6, 0, "wave", 8 + lv * 5);
+      break;
+  }
 }
 
 function fire(w: World, input: Input, rng: () => number) {
@@ -831,27 +1064,30 @@ function fire(w: World, input: Input, rng: () => number) {
       for (const s of w.ships) if (s.x > p.x && Math.abs(s.y - p.y) < s.h / 2 + 3) damage(w, s, 1, true, rng);
     play(w, "sizzle");
   } else if (p.fireCd <= 0) {
-    p.fireCd = p.rapidT > 0 ? p.rapidCd : 8;
-    if (p.spreadWays === 3) {
-      shot(w, p.x + 9, p.y, 7, 0);
-      shot(w, p.x + 8, p.y - 2, 6.8, -1.1);
-      shot(w, p.x + 8, p.y + 2, 6.8, 1.1);
-    } else if (p.spreadWays === 2) {
-      shot(w, p.x + 9, p.y - 3, 7, 0);
-      shot(w, p.x + 9, p.y + 3, 7, 0);
-    } else shot(w, p.x + 9, p.y, 7, 0);
-    // drones copy every other shot
+    const cd = GUN_CD[p.gun];
+    p.fireCd = p.rapidT > 0 ? Math.max(3, Math.round((cd * p.rapidCd) / 8)) : cd;
+    gunVolley(w);
+    // drones copy every other shot, and the side pods fire on the others
     p.volley++;
-    if (p.volley % 2 === 0) for (const d of p.drones) shot(w, d.x + 4, d.y, 7, 0, false, true);
-    play(w, "shoot");
+    if (p.volley % 2 === 0) for (const d of p.drones) shot(w, d.x + 4, d.y, 7, 0, "drone");
+    else if (p.sideT > 0)
+      for (const k of [-1, 1]) {
+        const [px, py] = podAt(p, k);
+        shot(w, px + 2, py, 5.6, k * 2.4, "pod");
+        if (p.sideLv >= 2) shot(w, px - 3, py, -6, 0, "pod");
+      }
+    play(w, p.gun === "wave" ? "beam" : "shoot");
   }
   if (p.missiles > 0 && p.missileCd <= 0 && w.ships.some(targetable)) {
     p.missiles--;
     p.missileCd = 18;
-    shot(w, p.x, p.y + (p.missiles % 2 ? -4 : 4), 1.5, p.missiles % 2 ? -1.6 : 1.6, true);
+    shot(w, p.x, p.y + (p.missiles % 2 ? -4 : 4), 1.5, p.missiles % 2 ? -1.6 : 1.6, "missile");
     play(w, "launch");
   }
 }
+
+/** Where a side pod sits: above (k = -1) or below (k = 1) the ship. */
+export const podAt = (p: Player, k: number): [number, number] => [p.x - 3, p.y + k * 10];
 
 function pulse(w: World) {
   if (w.meter < METER_MAX || !(w.phase === "play" || w.phase === "boss" || w.phase === "between" || w.phase === "warning")) return;
@@ -897,6 +1133,8 @@ function phases(w: World, rng: () => number) {
       }
       break;
     case "between":
+      // the next stage's backdrop comes in at full warp
+      if (w.phaseT === 30) w.stage = w.wave + 1;
       if (w.phaseT >= 60) {
         startWave(w, w.wave + 1, rng);
         w.phase = "play";
@@ -905,6 +1143,7 @@ function phases(w: World, rng: () => number) {
       break;
     case "warning":
       if (w.phaseT === 1) play(w, "horn");
+      if (w.phaseT === 40) w.stage = w.waves.length;
       if (w.phaseT >= 80) {
         spawnBoss(w, rng);
         w.phase = "boss";
@@ -935,7 +1174,7 @@ function diving(w: World, rng: () => number) {
     left++;
     if (s.state === "peel" || s.state === "dive") divers++;
   }
-  w.diveT = Math.max(28, 100 - w.wave * 10 - Math.max(0, 10 - left) * 6);
+  w.diveT = Math.round(Math.max(28, 100 - w.wave * 10 - Math.max(0, 10 - left) * 6) * waveTheme(w).dive);
   if (divers >= Math.min(4, 2 + w.wave)) return;
   // pick one in formation; fast ships are picked twice as often
   let total = 0;
@@ -964,7 +1203,7 @@ function startDive(w: World, s: Ship) {
   }
   s.state = "peel";
   s.angle = 0;
-  s.turn = (Math.floor(s.slot / COLS) < ROWS / 2 ? -1 : 1) * (Math.PI / (s.ability === "fast" ? 14 : 20));
+  s.turn = (waveTheme(w).slots[s.slot][1] < (TOP + BOTTOM) / 2 ? -1 : 1) * (Math.PI / (s.ability === "fast" ? 14 : 20));
   play(w, "whoosh");
 }
 
@@ -1189,11 +1428,21 @@ function moveShots(w: World, rng: () => number) {
   for (const b of w.shots) {
     if (!b.on) continue;
     b.t++;
-    if (b.missile) homing(w, b);
+    if (b.kind === "missile") homing(w, b, 0.16, Math.min(4, Math.hypot(b.vx, b.vy) + 0.15));
+    else if (b.kind === "seek" && b.t > 2) homing(w, b, 0.075, 5.6);
     b.x += b.vx;
     b.y += b.vy;
     if (b.x > W + 8 || b.x < -8 || b.y < TOP - 8 || b.y > BOTTOM + 8 || b.t > 150) {
       b.on = false;
+      continue;
+    }
+    if (b.kind === "wave") {
+      // pierces: hits each ship it passes once
+      const half = waveHalf(b);
+      for (const s of w.ships) {
+        if (!s.on || s.waveHit === b.id || Math.abs(s.x - b.x) > s.w / 2 + 2 || Math.abs(s.y - b.y) > s.h / 2 + half) continue;
+        if (damage(w, s, b.dmg, true, rng)) s.waveHit = b.id;
+      }
       continue;
     }
     for (const s of w.ships) {
@@ -1207,7 +1456,8 @@ function moveShots(w: World, rng: () => number) {
   }
 }
 
-function homing(w: World, b: Shot) {
+/** Steer a shot toward the nearest ship it can hit, turning at most `turn` a tick, at speed `sp`. */
+function homing(w: World, b: Shot, turn: number, sp: number) {
   let t: Ship | null = null;
   if (b.target >= 0) for (const s of w.ships) if (s.id === b.target && targetable(s)) t = s;
   if (!t) {
@@ -1219,13 +1469,12 @@ function homing(w: World, b: Shot) {
     }
     b.target = t ? t.id : -1;
   }
-  const sp = Math.min(4, Math.hypot(b.vx, b.vy) + 0.15);
   let a = Math.atan2(b.vy, b.vx);
   if (t) {
     let d = Math.atan2(t.y - b.y, t.x - b.x) - a;
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
-    a += clamp(d, -0.16, 0.16);
+    a += clamp(d, -turn, turn);
   }
   b.vx = Math.cos(a) * sp;
   b.vy = Math.sin(a) * sp;

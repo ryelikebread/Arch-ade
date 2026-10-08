@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { cast, strength } from "../../round";
+import { cast, seeded, strength } from "../../round";
 import { file, harness, nullContext, sampleRound } from "../../testing";
 import type { ArcadeRound, Button, Cast, Foe, Friend } from "../../types";
 import { game, type FleetGame } from ".";
-import { applyPerk, bossHits, buildWaves, CLOAK, damage, hitsFor, look, lunging, METER_MAX, MIN_FOES, newWorld, READY_TICKS, shieldFor, step, targetable, type Ship, type World } from "./logic";
+import {
+  applyPerk, applyWeapon, BOTTOM, bossHits, buildStages, buildWaves, CLOAK, damage, DROP_EVERY, GUN_TICKS, hitsFor, hurt, look, lunging, METER_MAX, MIN_FOES, newWorld,
+  READY_TICKS, shieldFor, slotAt, step, targetable, TOP, W as WIDTH, WEAPONS, type Capsule, type Ship, type World,
+} from "./logic";
 import { _gridsForTest } from "./sprites";
+import { pickThemes, THEME_IDS, THEMES, titleOf } from "./themes";
 
 const world = (t: { game: unknown }) => (t.game as FleetGame).world;
 const rng = (seed = 3) => {
@@ -164,7 +168,7 @@ describe("folder fleet", () => {
       for (let n = 0; n < 30 * 400 && !t.result(); n++) {
         w.player.invuln = 2; // a player that can't die, so the whole round plays out
         t.run(1, autopilot(w), 1000);
-        for (const c of w.capsules) if (c.on) seen.add(c.friend);
+        for (const c of w.capsules) if (c.on && c.friend) seen.add(c.friend);
       }
       expect(t.result()?.won).toBe(true);
       expect(w.drift.length).toBe(0);
@@ -367,9 +371,9 @@ describe("folder fleet", () => {
     expect(p.rapidT).toBeGreaterThan(0);
     expect(p.rapidCd).toBe(4);
     applyPerk(w, friend("spread", 2));
-    expect(p.spreadWays).toBe(2);
+    expect([p.gun, p.gunLv]).toEqual(["spread", 1]);
     applyPerk(w, friend("spread", 7));
-    expect(p.spreadWays).toBe(3);
+    expect([p.gun, p.gunLv]).toEqual(["spread", 2]);
     applyPerk(w, friend("ammo", 4));
     expect(p.missiles).toBe(6);
     const weak = newWorld(cast(sampleRound()), rng());
@@ -410,7 +414,7 @@ describe("folder fleet", () => {
     const w = world(t);
     t.run(READY_TICKS + 2);
     const [f1, f2] = cast(sampleRound()).friends;
-    w.capsules.push({ on: true, friend: f1, x: 200, y: 100, base: 100, vx: -0.5, t: 0 }, { on: true, friend: f2, x: 202, y: 100, base: 100, vx: -0.5, t: 0 });
+    w.capsules.push({ on: true, friend: f1, weapon: null, x: 200, y: 100, base: 100, vx: -0.5, t: 0 }, { on: true, friend: f2, weapon: null, x: 202, y: 100, base: 100, vx: -0.5, t: 0 });
     w.player.y = 30;
     t.run(40);
     const [a, b] = w.capsules.slice(-2);
@@ -463,7 +467,7 @@ describe("folder fleet", () => {
     const t = harness(game, sampleRound());
     const w = world(t);
     t.run(READY_TICKS + 120);
-    const c = w.capsules.find(() => true) ?? { on: false, friend: cast(sampleRound()).friends[0], x: 0, y: 0, base: 0, vx: 0, t: 0 };
+    const c: Capsule = w.capsules.find((k) => k.friend) ?? { on: false, friend: cast(sampleRound()).friends[0], weapon: null, x: 0, y: 0, base: 0, vx: 0, t: 0 };
     if (!w.capsules.includes(c)) w.capsules.push(c);
     // dropped right on the ship, it still shows for a few frames before it's picked up
     Object.assign(c, { on: true, x: w.player.x + 4, y: w.player.y, base: w.player.y, vx: 0, t: 0 });
@@ -533,7 +537,7 @@ describe("folder fleet", () => {
     w.player.invuln = 0;
     w.player.missiles = 4;
     // a shot a few ticks from the boss, a bullet on the ship, and a pulse on its way
-    w.shots.push({ on: true, x: boss.x - 40, y: boss.y, vx: 7, vy: 0, dmg: 1, missile: false, drone: false, target: -1, t: 0 });
+    w.shots.push({ on: true, x: boss.x - 40, y: boss.y, vx: 7, vy: 0, dmg: 1, kind: "bolt", target: -1, t: 0, size: 0, id: 0 });
     w.foeShots.push({ on: true, x: w.player.x, y: w.player.y, vx: 0, vy: 0, kind: "bullet", t: 0 });
     Object.assign(w.pulse, { on: true, x: w.player.x, y: w.player.y, r: 0, id: 99 });
     step(w, noInput, r);
@@ -630,3 +634,230 @@ describe("folder fleet", () => {
   });
 });
 
+describe("folder fleet: weapons", () => {
+  const fresh = () => newWorld(cast(sampleRound()), rng());
+  /** Fire with this gun for a while at the first wave in formation; returns the world. */
+  const firing = (setup: (w: World) => void, ticks = 30, foes: Foe[] = [foe("basic", 10)]) => {
+    const { w, r } = formed(foes);
+    setup(w);
+    const fire = { ...noInput, held: (b: string) => b === "fire" };
+    for (let i = 0; i < ticks; i++) {
+      w.player.invuln = 5;
+      step(w, fire, r);
+    }
+    return w;
+  };
+
+  it("guns replace each other; the same gun levels up to 3; time runs out back to the blaster", () => {
+    const w = fresh();
+    const p = w.player;
+    expect(p.gun).toBe("blaster");
+    expect(applyWeapon(w, "seeker", 2)).toBe("SEEKER 1");
+    expect([p.gun, p.gunLv]).toEqual(["seeker", 1]);
+    applyWeapon(w, "seeker", 2);
+    applyWeapon(w, "seeker", 2);
+    applyWeapon(w, "seeker", 2);
+    expect(p.gunLv).toBe(3);
+    // a new gun swaps in at your level
+    expect(applyWeapon(w, "wave", 1)).toBe("WAVE 3");
+    expect([p.gun, p.gunLv]).toEqual(["wave", 3]);
+    expect(applyWeapon(w, "spread", 1)).toBe("FIVE-WAY");
+    // a strong file starts a gun at level 2
+    const s = fresh();
+    applyWeapon(s, "wave", 8);
+    expect(s.player.gunLv).toBe(2);
+    // and it times out
+    s.player.gunT = 2;
+    s.phase = "play";
+    step(s, noInput, rng());
+    step(s, noInput, rng());
+    expect([s.player.gun, s.player.gunLv]).toEqual(["blaster", 1]);
+  });
+
+  it("side pods are an add-on: they fire with any gun, and a second set adds backward shots", () => {
+    const w = fresh();
+    expect(applyWeapon(w, "side", 3)).toBe("SIDE PODS");
+    applyWeapon(w, "seeker", 3);
+    expect(w.player.sideT).toBeGreaterThan(GUN_TICKS);
+    expect(w.player.gun).toBe("seeker");
+    const one = firing((v) => applyWeapon(v, "side", 3));
+    const pods = one.shots.filter((b) => b.on && b.kind === "pod");
+    expect(pods.some((b) => b.vy < -1)).toBe(true);
+    expect(pods.some((b) => b.vy > 1)).toBe(true);
+    expect(pods.some((b) => b.vx < 0)).toBe(false);
+    // (moved forward so the backward shots are still on screen)
+    const two = firing((v) => (applyWeapon(v, "side", 3), applyWeapon(v, "side", 3), (v.player.x = 150)));
+    expect(two.player.sideLv).toBe(2);
+    expect(two.shots.some((b) => b.on && b.kind === "pod" && b.vx < 0)).toBe(true);
+  });
+
+  it("seeker shots bend toward ships", () => {
+    const w = firing((v) => {
+      applyWeapon(v, "seeker", 1);
+      v.player.y = TOP + 8; // well above the formation
+    }, 16);
+    const seek = w.shots.filter((b) => b.on && b.kind === "seek" && b.t > 6);
+    expect(seek.length).toBeGreaterThan(0);
+    for (const b of seek) expect(b.vy).toBeGreaterThan(0.3);
+  });
+
+  it("a wave shot passes through ships, hitting each one once", () => {
+    const { w, r } = formed([foe("basic", 10), foe("basic", 10)]);
+    const [a, b] = w.ships.filter((s) => s.on && s.kind === "ship").slice(0, 2);
+    for (const s of w.ships) if (s !== a && s !== b) s.on = false;
+    // two ships in a row, in front of the ship, held still
+    Object.assign(a, { state: "dive", x: 120, y: 90, vx: 0, vy: 0, speed: 0 });
+    Object.assign(b, { state: "dive", x: 160, y: 96, vx: 0, vy: 0, speed: 0 });
+    const ha = a.hp;
+    const hb = b.hp;
+    applyWeapon(w, "wave", 5);
+    w.player.y = 90;
+    w.player.x = 60;
+    const fire = { ...noInput, held: (k: string) => k === "fire" };
+    step(w, fire, r);
+    for (let i = 0; i < 30; i++) {
+      a.x = 120;
+      b.x = 160;
+      w.player.invuln = 5;
+      step(w, noInput, r);
+    }
+    expect(ha - a.hp).toBe(1);
+    expect(hb - b.hp).toBe(1);
+  });
+
+  it("each gun fires its own shots; rapid fire speeds up any of them", () => {
+    const count = (setup: (w: World) => void) => firing(setup).shots.filter((b) => b.on && b.t <= 30).length;
+    const kinds = (setup: (w: World) => void) => new Set(firing(setup).shots.filter((b) => b.on).map((b) => b.kind));
+    expect(kinds((v) => applyWeapon(v, "seeker", 1))).toContain("seek");
+    expect(kinds((v) => applyWeapon(v, "wave", 1))).toContain("wave");
+    expect(count((v) => (applyWeapon(v, "wave", 1), applyPerk(v, friend("rapid", 8))))).toBeGreaterThan(count((v) => applyWeapon(v, "wave", 1)));
+    expect(count((v) => (applyWeapon(v, "spread", 1), applyWeapon(v, "spread", 1), applyWeapon(v, "spread", 1)))).toBeGreaterThan(count((v) => applyWeapon(v, "spread", 1)));
+  });
+
+  it("losing a life costs a gun level", () => {
+    const w = fresh();
+    w.phase = "play";
+    applyWeapon(w, "seeker", 8);
+    hurt(w, rng());
+    expect([w.player.gun, w.player.gunLv]).toEqual(["seeker", 1]);
+    w.player.invuln = 0;
+    hurt(w, rng());
+    expect(w.player.gun).toBe("blaster");
+  });
+
+  it("beaten ships drop a weapon now and then; drops aren't kept files", () => {
+    const { w, r } = formed([]);
+    const [s1, s2, s3] = w.ships.filter((s) => s.on && s.kind === "ship" && !s.carries);
+    w.sinceDrop = DROP_EVERY - 2;
+    s1.x = 200;
+    damage(w, s1, 99, false, r);
+    expect(w.capsules.some((c) => c.on)).toBe(false);
+    s2.x = 200;
+    damage(w, s2, 99, false, r);
+    // only one drop on screen at a time
+    w.sinceDrop = DROP_EVERY;
+    damage(w, s3, 99, false, r);
+    expect(w.capsules.filter((c) => c.on).length).toBe(1);
+    const drop = w.capsules.find((c) => c.on && !c.friend)!;
+    expect(drop).toBeDefined();
+    expect(WEAPONS).toContain(drop.weapon);
+    const before = w.collected;
+    Object.assign(drop, { x: w.player.x, y: w.player.y, base: w.player.y, t: 10 });
+    safeStep(w, r);
+    expect(drop.on).toBe(false);
+    expect(w.collected).toBe(before);
+    expect(drop.weapon === "side" ? w.player.sideT > 0 : w.player.gun === drop.weapon).toBe(true);
+  });
+
+  it("everything-else files give a new weapon as well as their points; spread files the spread gun", () => {
+    const r = rng();
+    const w = newWorld({ foes: [foe("basic", 3)], friends: [friend("points", 4), friend("spread", 4)], benched: 0 }, r);
+    for (let i = 0; i < 30 * 200 && w.collected < 2 && !w.result; i++) {
+      w.player.invuln = 5;
+      for (const c of w.capsules) if (c.on && c.friend && c.t > 8) Object.assign(c, { x: w.player.x, y: w.player.y, base: w.player.y });
+      for (const s of w.ships) if (s.on && s.state === "formation") damage(w, s, 99, false, r, true);
+      step(w, noInput, r);
+    }
+    expect(w.collected).toBe(2);
+    expect(w.score).toBeGreaterThanOrEqual(400);
+    // the points file brought seeker, wave or side pods; the spread file the spread gun
+    expect(w.player.gun === "spread" || w.player.sideT > 0).toBe(true);
+  });
+});
+
+describe("folder fleet: stages", () => {
+  it("every theme's formation stays on the right, in the play area, with no two ships touching", () => {
+    for (const id of THEME_IDS) {
+      const th = THEMES[id];
+      expect(th.slots.length).toBe(12);
+      for (let t = 0; t < 600; t += 3) {
+        const pts = th.slots.map((_, i) => slotAt(th, i, t));
+        for (const [x, y] of pts) {
+          expect(x).toBeGreaterThan(195);
+          expect(x).toBeLessThan(WIDTH - 12);
+          expect(y).toBeGreaterThan(TOP + 10);
+          expect(y).toBeLessThan(BOTTOM - 10);
+        }
+        for (let i = 0; i < pts.length; i++)
+          for (let j = i + 1; j < pts.length; j++) expect(Math.abs(pts[i][0] - pts[j][0]) >= 18 || Math.abs(pts[i][1] - pts[j][1]) >= 12).toBe(true);
+      }
+    }
+  });
+
+  it("stages are titled after the folders in turn, with a random theme each", () => {
+    const st = buildStages(3, ["Downloads", "Photos"], rng());
+    expect(st.map((s) => s.title)).toEqual(["DOWNLOADS", "PHOTOS", "DOWNLOADS", "PHOTOS"]);
+    const seen = new Set<string>();
+    for (let seed = 1; seed < 40; seed++) {
+      const themes = pickThemes(5, seeded(seed));
+      for (let i = 1; i < themes.length; i++) expect(themes[i]).not.toBe(themes[i - 1]);
+      // all five before any repeats
+      expect(new Set(themes).size).toBe(5);
+      seen.add(themes[0]);
+    }
+    expect(seen.size).toBe(THEME_IDS.length);
+    expect(titleOf("Café Ünïcode 2024 ✨")).toBe("CAFE UNICOD.");
+    expect(titleOf("📁")).toBe("FILES");
+    // the game uses the round's folders
+    const t = harness(game, sampleRound());
+    expect(world(t).stages[0].title).toBe(titleOf(t.ctx.folders[0]));
+    expect(world(t).stages.length).toBe(world(t).waves.length + 1);
+  });
+
+  it("each theme's wave flies in on the right half and lines up", () => {
+    const covered = new Set<string>();
+    for (let seed = 1; seed < 60 && covered.size < THEME_IDS.length; seed++) {
+      const t = harness(game, bigRound(), seed);
+      const w = world(t);
+      const id = w.stages[0].theme;
+      if (covered.has(id)) continue;
+      covered.add(id);
+      let minX = Infinity;
+      let formed = 0;
+      for (let i = 0; i < 420; i++) {
+        w.player.invuln = 5;
+        w.diveT = 99; // no dives, just the fly-in
+        t.run(1);
+        for (const s of w.ships) if (s.on && s.state === "enter") minX = Math.min(minX, s.x);
+      }
+      for (const s of w.ships) if (s.on && s.state === "formation") formed++;
+      expect(minX).toBeGreaterThan(150);
+      expect(formed).toBe(w.ships.filter((s) => s.on).length);
+    }
+    expect(covered.size).toBe(THEME_IDS.length);
+  });
+
+  it("the next stage's backdrop comes in mid-way through the break, at warp speed", () => {
+    const t = harness(game, sampleRound());
+    const w = world(t);
+    t.run(READY_TICKS + 5);
+    for (const s of w.ships) s.on = false;
+    t.run(2);
+    expect(w.phase).toBe("between");
+    expect(w.stage).toBe(0);
+    const s0 = w.scroll;
+    t.run(30);
+    expect(w.stage).toBe(1);
+    expect(w.scroll - s0).toBeGreaterThan(60);
+  });
+});
