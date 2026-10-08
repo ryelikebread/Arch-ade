@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- Dev-only page to look at a mini-game outside the app (not part of the build):
+     npx vite --port 1430, then open /dev/arcade.html?game=<id>. See src/arcade/preview.ts. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Arcade preview</title>
+    <style>
+      body { margin: 0; background: #07040f; color: #ccc; font: 12px monospace; }
+      canvas { display: block; image-rendering: pixelated; margin: 8px; }
+      pre { margin: 8px; }
+    </style>
+  </head>
+  <body>
+    <script type="module" src="/src/arcade/preview.ts"></script>
+  </body>
+</html>

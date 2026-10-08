@@ -1,0 +1,17 @@
+{
+  "id": "paper",
+  "name": "Paper",
+  "colors": {
+    "bg": "#f3ead8",
+    "panel": "#fffaf0",
+    "panel2": "#e9dcc2",
+    "ink": "#2b2118",
+    "dim": "#7a6a58",
+    "accent": "#c4501f",
+    "accent2": "#1f6fc4",
+    "danger": "#b8282f",
+    "ok": "#237a40",
+    "select": "#f5c97a",
+    "grid": "#d6c6a8"
+  }
+}

@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["crates/arch-ade-core", "src-tauri", "tools/gen-test-folder"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"

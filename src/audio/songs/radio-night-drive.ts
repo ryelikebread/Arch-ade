@@ -1,0 +1,72 @@
+// Night Drive: synthwave for late-night sorting. Original, CC0 (see MUSIC_CREDITS.md).
+import type { Song } from "../music";
+
+const station = "Night Drive";
+
+export const songs: Song[] = [
+  {
+    id: "neon-overpass",
+    title: "Neon Overpass",
+    station,
+    bpm: 100,
+    lead: { wave: "saw", vol: 0.18 },
+    harmony: { wave: "triangle", vol: 0.2 },
+    bass: "drive",
+    arpEvery: 2,
+    arp: { wave: "saw", vol: 0.03, octave: 4 },
+    drums: "half",
+    bars: [
+      { chord: "Am", lead: "E5:4 A5:4 C6:6 B5:2", harmony: "C5:16" },
+      { chord: "F", lead: "A5:8 G5:4 F5:4", harmony: "C5:16" },
+      { chord: "C", lead: "E5:4 G5:4 C6:4 E6:4", harmony: "E5:16" },
+      { chord: "G", lead: "D6:12 -:4", harmony: "D5:16" },
+      { chord: "Am", lead: "C6:4 B5:4 A5:4 E5:4", harmony: "E5:16" },
+      { chord: "F", lead: "F5:4 A5:4 C6:4 F6:4", harmony: "C5:16" },
+      { chord: "G", lead: "E6:6 D6:2 B5:4 G5:4", harmony: "D5:16" },
+      { chord: "E", lead: "G#5:12 -:4", harmony: "B4:16" },
+    ],
+  },
+  {
+    id: "tail-lights",
+    title: "Tail Lights",
+    station,
+    bpm: 108,
+    lead: { wave: "saw", vol: 0.17 },
+    bass: "eighths",
+    arpEvery: 1,
+    arp: { wave: "saw", vol: 0.025, octave: 5 },
+    drums: "half",
+    bars: [
+      { chord: "Em", lead: "B5:2 B5:2 -:2 G5:2 E5:4 G5:2 A5:2" },
+      { chord: "C", lead: "G5:6 E5:2 C5:4 -:4" },
+      { chord: "G", lead: "D5:2 G5:2 B5:2 D6:6 -:4" },
+      { chord: "D", lead: "C6:2 B5:2 A5:4 F#5:4 D5:4" },
+      { chord: "Em", lead: "E5:2 G5:2 B5:2 E6:6 D6:2 B5:2" },
+      { chord: "C", lead: "C6:6 B5:2 G5:4 E5:4" },
+      { chord: "G", lead: "B5:4 D6:4 G6:4 F#6:2 D6:2" },
+      { chord: "D", lead: "F#6:8 A5:4 D6:4" },
+    ],
+  },
+  {
+    id: "midnight-refresh",
+    title: "Midnight Refresh",
+    station,
+    bpm: 92,
+    lead: { wave: "square", vol: 0.13, duty: 0.125 },
+    harmony: { wave: "saw", vol: 0.08 },
+    bass: "drive",
+    arpEvery: 2,
+    arp: { wave: "saw", vol: 0.03, octave: 4 },
+    drums: "half",
+    bars: [
+      { chord: "F#m", lead: "C#6:6 A5:2 F#5:8", harmony: "A4:16" },
+      { chord: "D", lead: "F#5:4 A5:4 D6:4 C#6:4", harmony: "A4:16" },
+      { chord: "A", lead: "C#6:2 E6:2 C#6:2 A5:2 E5:8", harmony: "C#5:16" },
+      { chord: "E", lead: "G#5:4 B5:4 E6:8", harmony: "B4:16" },
+      { chord: "F#m", lead: "F#6:4 E6:4 C#6:4 A5:4", harmony: "C#5:16" },
+      { chord: "D", lead: "D6:6 C#6:2 A5:4 F#5:4", harmony: "D5:16" },
+      { chord: "A", lead: "E5:4 A5:4 C#6:4 E6:4", harmony: "C#5:16" },
+      { chord: "E", lead: "B5:12 -:4", harmony: "G#4:16" },
+    ],
+  },
+];

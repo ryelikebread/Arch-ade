@@ -1,0 +1,19 @@
+<!doctype html>
+<!-- Dev-only page to look at a skin outside the app (not part of the build):
+     npx vite --port 1430, then open /dev/skin.html?skin=<id>. See src/skins/preview.ts. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Skin preview</title>
+    <style>
+      body { margin: 0; background: #1a1030; color: #ccc; font: 12px monospace; }
+      .row { display: flex; gap: 6px; margin: 6px; align-items: center; }
+      .row b { width: 110px; }
+      canvas { image-rendering: pixelated; }
+      pre { margin: 8px; color: #f88; }
+    </style>
+  </head>
+  <body>
+    <script type="module" src="/src/skins/preview.ts"></script>
+  </body>
+</html>

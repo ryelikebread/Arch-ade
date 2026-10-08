@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux first in spirit: WebKitGTK is the slowest webview, and 22.04
+        # is the oldest glibc we support for the AppImage.
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # Exercise the real OS trash (Finder Trash / Recycle Bin / freedesktop).
+      ARCHADE_TEST_TRASH: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+
+      - name: Cache vcpkg packages (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-libheif-core-x64-windows-static-md-v1
+
+      - name: libheif for HEIC (Windows, via vcpkg)
+        # libheif-sys links vcpkg's libheif on MSVC instead of building it.
+        # "core" skips the default x265 encoder (GPL, and decode-only is all we need).
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install "libheif[core]:x64-windows-static-md"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: npm ci
+      - name: Frontend tests
+        run: npm test
+      - name: Frontend build (typecheck + bundle)
+        run: npm run build
+
+      - name: Rust format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Rust tests
+        run: cargo test --workspace
