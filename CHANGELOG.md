@@ -2,6 +2,10 @@
 
 ## 2026-10-08
 
+- Phase 5: Undelete can be steered with the mouse (click to capture, Esc to let go). Why: Rye asked for mouse piloting, not just keys.
+- Phase 5: more pickups in every game: new guns in Undelete and Folder Fleet, multiball and new capsules in Brick Sort, power-ups in Tidy Hop. Why: Rye asked for more pickup options.
+- Phase 5: levels are named after the round's folders and each picks a random theme with a slightly different layout. Why: Rye asked for folder-based level titles and varied themes.
+- Phase 5: a local leaderboard (top 10 per game, with date and folder) replaces the single best score. Why: Rye asked for leaderboards of past scores.
 - Phase 4: three new File by File skins, Pigeon Court, Peasoup and Royal Court, each with its own theme song and sound effects; Royal Court's trash randomly goes to the dungeon or the trap door, and Peasoup's soup and dog change as you go. Why: Rye asked for these skins.
 - Phase 4: skin manifests gain `variants` (random alternative animations), per-animation `sounds`, `music` and scene props with `tally`; songs, effects and built-in skins are found by folder. Why: needed by the new skins and makes adding more a one-folder job.
 - Phase 4: radio has 13 stations with several songs each (each plays twice, then the next). Why: Rye asked for more channels and songs.

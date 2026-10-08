@@ -297,8 +297,12 @@ Cross-cutting
   context gives the canvas, cast, input, seeded rng, sound effects, arcade icons and the
   pixel font, and `end(result)`.
 - `host.ts` is the arcade window: game picker, integer-scaled canvas, fixed 30 updates/s
-  (at most 3 catch-up steps), pause overlay, result screen and best scores (`arcadeBest`
-  setting). It stops on pause, hide and close, and keeps every key inside the arcade.
+  (at most 3 catch-up steps), pause overlay, result screen and the local leaderboard
+  (`scores.ts`, `arcadeScores` setting; old `arcadeBest` values are carried over). It
+  stops on pause, hide and close, and keeps every key inside the arcade. Games with
+  `mouse: "look"` get pointer lock on click; Esc or losing the lock pauses.
+- Rounds carry the folders their files came from (`round.ts`); games title their levels
+  with `ctx.folders` and pick level themes with the seeded `ctx.rng()`.
 - `registry.ts` lists the games with `import()` loaders, so each game is its own chunk and
   the host itself is loaded only when a game is offered. With the mode off nothing
   under `src/arcade/` beyond the settings code runs. `launch.ts` holds the settings

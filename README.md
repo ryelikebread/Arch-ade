@@ -250,13 +250,29 @@ The files you just processed come back as the cast:
 
 | Game | Inspired by | Controls |
 | --- | --- | --- |
-| **Undelete** | 90s first-person maze shooters | ↑↓ walk, ←→ turn, X + ←→ strafe, Space fire |
-| **Brick Sort** | brick-breaker paddle games | ←→ or mouse move, Space or click launch, hold Space rapid fire, X spare ball |
-| **Tidy Hop** | side-scrolling platformers and kitchen stack-'em-ups | ←→ run, Space jump (hold: higher), X throw, ↑↓ ladders |
+| **Undelete** | 90s first-person maze shooters | ↑↓ walk, ←→ turn, X + ←→ strafe, Space fire; or click to steer with the mouse (click fires, Esc lets go) |
+| **Brick Sort** | brick-breaker paddle games | ←→ or mouse move, Space or click launch (or let go of a caught ball), hold Space laser, X spare ball |
+| **Tidy Hop** | side-scrolling platformers and kitchen stack-'em-ups | ←→ run, Space jump (hold: higher; again in the air with wings), X throw, ↑↓ ladders |
 | **Folder Fleet** | side-scrolling and formation space shooters | arrows move, Space fire (hold), X power pulse |
 
+Each game is split into levels named after the folders the round's files came from
+("LEVEL 2 - DOWNLOADS"), and each level picks one of five themes at random, with its own
+look and a slightly different layout (maze shape, brick pattern, platforms, enemy
+formation). Pickups beyond the files' perks:
+
+- **Undelete**: guns with limited shots (fan stapler, splash cannon, defrag beam that
+  goes through a line of zombies, ricochet, short-range shredder), from kept files and
+  occasional drops.
+- **Brick Sort**: multiball (up to 8 balls), wide paddle, catch, slow ball, fireball,
+  laser and more, as lettered capsules.
+- **Tidy Hop**: wings (double jump), star (invincible), magnet and speed boost.
+- **Folder Fleet**: spread, seeker (homing) and wave guns that level up to 3, plus side
+  pods on top of any gun.
+
 WASD works for arrows, Z/J for Space and K/Shift for X. **Esc** (or P) pauses, with
-Resume, Restart, Other game and Close arcade. Best scores are remembered per game.
+Resume, Restart, Other game and Close arcade. The **Leaderboard** (in the game picker
+and on the score screen) keeps the top 10 scores per game on this machine, with the date
+and folder.
 All art and sound is original, drawn and generated in code; the games are "inspired by"
 only. Each game is its own module, loaded the first time it's played; they run at 30
 updates per second and stop while paused or the window is hidden.
