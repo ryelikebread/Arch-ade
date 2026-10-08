@@ -75,4 +75,25 @@ describe("arcade host", () => {
       vi.useRealTimers();
     }
   });
+
+  it("records a finished game on the leaderboard and shows it there", async () => {
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+    try {
+      openArcade({ source: "Plan", files: [], folders: ["Downloads"] }, { game: "a", autostart: true });
+      pending.a(fake("a", 1));
+      await vi.waitFor(() => expect(created.a).toBe(1));
+      vi.advanceTimersByTime(200);
+      expect(document.querySelector(".arcade-big")?.textContent).toContain("New best!");
+      const rows = [...document.querySelectorAll(".arcade-row")].map((r) => r.textContent);
+      for (let i = 0; i < rows.findIndex((t) => t?.includes("Leaderboard")); i++) key("ArrowDown");
+      key("Enter");
+      expect(document.querySelector("h2")?.textContent).toBe("Leaderboard");
+      const mine = document.querySelector(".arcade-board tr.mine");
+      expect(mine?.textContent).toContain("Downloads");
+      key("Escape"); // back to the same result screen
+      expect(document.querySelector(".arcade-big")?.textContent).toContain("Score 1");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

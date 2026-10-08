@@ -428,10 +428,9 @@ function drawHud(ctx: GameContext, w: World, art: Art) {
   const titleOn = w.phase === "play" && w.stage > 0 && w.tick - w.stageT < TITLE_TICKS && p.dead === 0;
   if (w.phase === "ready") {
     stageTitle(ctx, w, 0, 26);
-    banner(ctx, "READY", C.yellow, 3);
+    banner(ctx, w.phaseT > READY_TICKS - 10 ? "GO!" : "READY", w.phaseT > READY_TICKS - 10 ? C.green : C.yellow, 3);
     const hint = "SPACE JUMP   X THROW";
     ctx.text(hint, Math.round(VIEW_W / 2 - ctx.textWidth(hint) / 2), 92, C.lilac);
-    if (w.phaseT > READY_TICKS - 10) banner(ctx, "GO!", C.green, 3);
   } else if (titleOn) stageTitle(ctx, w, w.stage, 40);
   else if (w.phase === "play" && w.tick < READY_TICKS + 20) banner(ctx, "GO!", C.green, 3);
   else if (w.phase === "goal" || (w.phase === "done" && w.won)) banner(ctx, "ALL TIDY!", C.green, 2);
