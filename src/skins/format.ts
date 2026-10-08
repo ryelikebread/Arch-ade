@@ -58,6 +58,13 @@ export interface Prop {
   x: number;
   y: number;
   fps?: number;
+  /**
+   * Scenery that remembers the session: shows `sprites[n]`, where n counts
+   * the decisions in `on` so far (Undo takes one back), staying on the last.
+   * `sprite` is shown while n is 0. Example: a soup pot that fills up as
+   * files are kept.
+   */
+  tally?: { on: SkinEvent[]; sprites: string[] };
 }
 
 export interface Animation {
@@ -141,6 +148,12 @@ export function validateSkin(raw: unknown): SkinManifest | string[] {
     scene.forEach((p, i) => {
       if (!p || typeof p.sprite !== "string" || !known(p.sprite) || p.sprite === "file") errs.push(`scene ${i + 1}: unknown sprite ${p?.sprite}`);
       else if (!inStage(p.x, p.y) || (p.fps !== undefined && !num(p.fps, 0, 30))) errs.push(`scene ${i + 1}: bad position or fps`);
+      else if (p.tally !== undefined) {
+        const t = p.tally;
+        if (!t || !Array.isArray(t.on) || !t.on.length || !t.on.every((e) => SKIN_EVENTS.includes(e))) errs.push(`scene ${i + 1}: tally.on must list actions`);
+        if (!t || !Array.isArray(t.sprites) || !t.sprites.length || t.sprites.length > 16 || !t.sprites.every((s) => typeof s === "string" && known(s) && s !== "file"))
+          errs.push(`scene ${i + 1}: tally.sprites must be 1..16 known sprites`);
+      }
     });
   const file = m.file as unknown[];
   if (!Array.isArray(file) || file.length !== 2 || !inStage(file[0], file[1])) errs.push("file must be [x, y]");
@@ -256,6 +269,13 @@ export interface Captions {
   newName?: string;
   dest?: string;
   kind?: string;
+}
+
+/** The sprite a scene prop shows after `counts` decisions of each kind. */
+export function propSprite(p: Prop, counts: Partial<Record<SkinEvent, number>>): string {
+  if (!p.tally) return p.sprite;
+  const n = p.tally.on.reduce((a, e) => a + (counts[e] ?? 0), 0);
+  return n <= 0 ? p.sprite : p.tally.sprites[Math.min(n, p.tally.sprites.length) - 1];
 }
 
 /** The animation and sounds for an action: "delete" falls back to "trash"; variants are picked by `pick` (0..1). */

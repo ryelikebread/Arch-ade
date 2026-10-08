@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normalize, textWidth, _glyphsForTest } from "../pixel/font";
 import space from "./builtin/space/manifest.json";
 import volcano from "./builtin/volcano/manifest.json";
-import { caption, ease, frameAt, poseAt, validateSkin, type SkinManifest } from "./format";
+import { animationFor, caption, ease, frameAt, poseAt, propSprite, validateSkin, type SkinManifest } from "./format";
 
 describe("skin manifests", () => {
   it("built-in skins are valid and animate every action", () => {
@@ -28,6 +28,26 @@ describe("skin manifests", () => {
     expect(errs.join("\n")).toMatch(/unknown sprite nope/);
     expect(errs.join("\n")).toMatch(/in order/);
     expect(validateSkin("nope")).toEqual(["manifest is not a JSON object"]);
+  });
+
+  it("picks a random variant for an action, each with its own sounds", () => {
+    const m = JSON.parse(JSON.stringify(volcano));
+    const alt = { ...JSON.parse(JSON.stringify(m.animations.trash)), sounds: [{ at: 0, sfx: "chime" }] };
+    m.variants = { trash: [alt] };
+    const ok = validateSkin(m) as SkinManifest;
+    expect(Array.isArray(ok) ? ok : []).toEqual([]);
+    expect(animationFor(ok, "trash", 0.1)!.anim).toBe(ok.animations.trash);
+    expect(animationFor(ok, "trash", 0.9)!.cues).toEqual([{ at: 0, sfx: "chime" }]);
+    m.variants = { nope: [] };
+    expect((validateSkin(m) as string[]).join()).toMatch(/unknown action nope/);
+  });
+
+  it("scene props can change as decisions add up", () => {
+    const sprite = Object.keys(volcano.sprites)[0];
+    const p = { sprite, x: 0, y: 0, tally: { on: ["keep" as const], sprites: [sprite + "1", sprite + "2"] } };
+    expect(propSprite(p, {})).toBe(sprite);
+    expect(propSprite(p, { keep: 1, move: 4 })).toBe(sprite + "1");
+    expect(propSprite(p, { keep: 9 })).toBe(sprite + "2");
   });
 });
 

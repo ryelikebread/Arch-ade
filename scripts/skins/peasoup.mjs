@@ -222,7 +222,11 @@ function flame(i) {
 // The big pot of pea soup. `soup` = [main, dark, bubble] colors; `bubbles`
 // picks the bubbling frame; `heap` raises the soup and adds foam.
 const POT_W = 38, POT_H = 26, TOP = 3, RIM = 9;
-function pot(i, soup = [P.g, P.G, P.h], heap = false) {
+// `o`: soup colors [main, dark, bubble], `fill` raises the surface (0..2),
+// `bubbles` 0..2 (more and bigger), `veg` shows carrots and potato,
+// `foam` piles a dome over the rim, `drip` is how far it runs down the side.
+function pot(i, o = {}) {
+  const { soup = [P.g, P.G, P.h], fill: lvl = 0, bubbles = 0, veg = false, foam = false, drip = 0 } = o;
   const f = blank(POT_W, POT_H);
   const [s, S, h] = soup;
   const cx = POT_W / 2;
@@ -242,8 +246,10 @@ function pot(i, soup = [P.g, P.G, P.h], heap = false) {
   for (let x = 3; x < POT_W - 3; x++) set(f, x, TOP + 13, P.z);
   box(f, 0, TOP + 9, 3, 5, P.z, P.k);
   box(f, POT_W - 3, TOP + 9, 3, 5, P.z, P.k);
-  // Rim: an ellipse seen from above, full of soup.
+  // Rim: an ellipse seen from above, full of soup. A fuller pot shows less
+  // of the far inside wall (the dark band at the top).
   const ry = RIM / 2;
+  const wall = [3, 2, 1][lvl];
   for (let y = 0; y < RIM; y++)
     for (let x = 0; x < POT_W; x++) {
       const dx = (x + 0.5 - cx) / (cx - 1);
@@ -251,19 +257,24 @@ function pot(i, soup = [P.g, P.G, P.h], heap = false) {
       const d = dx * dx + dy * dy;
       if (d > 1) continue;
       const rim = d > 0.68;
-      let c = rim ? (y < ry ? P.z : P.X) : y < 3 ? S : s;
+      let c = rim ? (y < ry ? P.z : P.X) : y < wall ? S : s;
       if (rim && d > 0.9) c = P.k;
       set(f, x, TOP + y, c);
     }
+  if (veg)
+    for (const [x, y, c] of [[9, 5, P.o], [14, 6, P.s], [20, 5, P.o], [25, 6, P.s], [28, 4, P.o], [12, 4, P.o], [23, 3, "#c8323c"]])
+      set(f, x + ((i + x) % 2), TOP + y, c);
   // Bubbles on the surface.
-  const spots = heap
-    ? [[[10, 4, 2.2], [21, 3, 1.8], [28, 5, 1.4]], [[15, 4, 2.4], [26, 4, 1.7], [8, 5, 1.2]], [[12, 3, 1.6], [19, 5, 2.4], [28, 4, 1.8]]]
-    : [[[11, 4, 1.1], [24, 5, 1]], [[17, 4, 1.3], [27, 4, 0.9]], [[13, 5, 0.9], [21, 3, 1.1]]];
+  const spots = [
+    [[[11, 4, 1.1], [24, 5, 1]], [[17, 4, 1.3], [27, 4, 0.9]], [[13, 5, 0.9], [21, 3, 1.1]]],
+    [[[10, 4, 1.4], [19, 5, 1.2], [27, 4, 1]], [[15, 4, 1.6], [24, 5, 1.2], [8, 5, 0.9]], [[12, 5, 1.2], [21, 4, 1.5], [28, 5, 1]]],
+    [[[10, 4, 2.2], [21, 3, 1.8], [28, 5, 1.4]], [[15, 4, 2.4], [26, 4, 1.7], [8, 5, 1.2]], [[12, 3, 1.6], [19, 5, 2.4], [28, 4, 1.8]]],
+  ][bubbles];
   for (const [bx, by, r] of spots[i % 3]) {
     disc(f, bx, TOP + by + 0.5, r, h);
     set(f, Math.round(bx - r / 2), TOP + by, P.w);
   }
-  if (heap) {
+  if (foam) {
     // The soup has risen: a foamy dome over the rim.
     for (let y = 0; y < TOP + 2; y++)
       for (let x = 0; x < POT_W; x++) {
@@ -272,8 +283,38 @@ function pot(i, soup = [P.g, P.G, P.h], heap = false) {
         if (dx * dx + dy * dy > 1) continue;
         set(f, x, y, (x * 3 + y + i) % 5 === 0 ? P.w : (x + y + i) % 3 ? s : h);
       }
-    // Drips down the side.
-    for (const [x, len] of [[8, 3 + (i % 2)], [27, 2 + ((i + 1) % 2)]]) fill(f, x, TOP + 6, 1, len, s);
+  }
+  // Drips running down the side.
+  if (drip)
+    for (const [x, len] of [[6, drip + (i % 2)], [13, drip - 2], [26, drip - 1 + ((i + 1) % 2)], [31, drip - 3]])
+      if (len > 0) {
+        fill(f, x, TOP + 6, 1, len, s);
+        set(f, x, TOP + 6 + len, S);
+      }
+  return f;
+}
+
+// The pot over a session: each kept file makes the soup fuller and richer.
+const POT_STAGES = [
+  { fill: 1, bubbles: 1 },
+  { fill: 2, bubbles: 1, soup: ["#6aa535", "#4d8229", P.h] },
+  { fill: 2, bubbles: 1, veg: true, soup: ["#68a334", "#4a7f28", P.h] },
+  { fill: 2, bubbles: 2, veg: true, soup: ["#5c9a2c", "#3f7322", "#b8dd8a"] },
+  { fill: 2, bubbles: 2, veg: true, foam: true, drip: 3, soup: ["#54922a", "#3a6b1f", "#c0e494"] },
+  { fill: 2, bubbles: 2, veg: true, foam: true, drip: 9, soup: ["#4e8a26", "#33631b", "#c8e6a0"] },
+];
+
+// keep: a rolling boil laid over whatever stage the pot is at, with bits of
+// the new ingredient (`bits`) jumping out. Transparent everywhere else.
+function boil(i, bits) {
+  const f = blank(POT_W, POT_H);
+  const foamC = ["#ffffffd0", "#e8f6d8e0"];
+  for (const [bx, by, r] of [[[9, 6, 2.2], [18, 6, 2.6], [27, 6, 2]], [[13, 5, 2.6], [23, 6, 2.4], [30, 6, 1.4]], [[8, 6, 1.8], [17, 5, 2.4], [26, 5, 2.6]]][i])
+    disc(f, bx, TOP + by - 1, r, foamC[(bx + i) % 2], "#ffffff");
+  for (const [x, y] of [[[12, 1], [24, 0]], [[8, 0], [20, 1], [29, 1]], [[15, 0], [26, 1]]][i]) {
+    set(f, x, y, bits[0]);
+    set(f, x + 1, y, bits[1]);
+    set(f, x, y + 1, bits[1]);
   }
   return f;
 }
@@ -339,6 +380,19 @@ const dogLie = [
 const dogLie2 = dogLie.map((r, y) =>
   y === 5 ? r.slice(0, 22) + "..n" : y === 6 ? r.slice(0, 22) + ".n." : y === 7 ? r.slice(0, 22) + "n.." : y === 8 ? r.slice(0, 22) + "..." : r,
 );
+
+// As it gets fed over a session the dog gets content, then rounder, then
+// properly smitten. `put` writes a string into a row at x.
+const put = (rows, y, x, str) => rows.map((r, j) => (j === y ? r.slice(0, x) + str + r.slice(x + str.length) : r));
+const content = (rows) => put(rows, 3, 3, "N");
+const belly = (rows) => put(put(rows, 9, 7, "llllllllllllll"), 8, 9, "lllllllll");
+const round = (rows) => put(put(rows, 4, 10, "nnnnnnnnnn"), 5, 9, "nnnnnnnnnnnn");
+const smitten = (rows) => put(put(rows, 1, 15, "r.r"), 2, 15, ".r.");
+const DOG_STAGES = [
+  (r) => belly(content(r)),
+  (r) => round(belly(content(r))),
+  (r) => smitten(round(belly(content(r)))),
+];
 
 const dogSit = [
   "....NN..........",
@@ -460,15 +514,18 @@ export const sprites = {
   stove: stove(),
   flame: [0, 1].map(flame),
   pot: [0, 1, 2].map((i) => pot(i)),
+  ...Object.fromEntries(POT_STAGES.map((o, n) => [`pot${n + 1}`, [0, 1, 2].map((i) => pot(i, o))])),
   // The soup after something goes in: richer, bubblier, foaming over.
-  potRich: [0, 1, 2].map((i) => pot(i, [P.G, P.H, P.h], true)),
-  potGold: [0, 1, 2].map((i) => pot(i, ["#a8b83a", "#7c8a24", "#e0e070"], true)),
-  potHerb: [0, 1, 2].map((i) => pot(i, ["#6aa83a", "#3e7a22", "#c8e6a0"], true)),
+  // The keep overlays: a rolling boil with peas, carrots or herbs jumping out.
+  boilPeas: [0, 1, 2].map((i) => boil(i, [P.h, P.G])),
+  boilCarrot: [0, 1, 2].map((i) => boil(i, [P.o, "#c8622a"])),
+  boilHerb: [0, 1, 2].map((i) => boil(i, [P.e, P.E])),
   steam: [0, 1, 2].map(steam),
   bigSteam: [0, 1, 2].map(bigSteam),
   ladle: [0, 1, 2, 3].map(ladle),
   splash: burst(20, 5, [P.w, P.h, P.g, P.G]),
   dog: [art(dogLie, P), art(dogLie2, P)],
+  ...Object.fromEntries(DOG_STAGES.map((st, n) => [`dog${n + 1}`, [art(st(dogLie), P), art(st(dogLie2), P)]])),
   dogPatch,
   dogSit: art(dogSit, P),
   dogBeg: [art(dogSit, P), art(dogBeg, P)],
@@ -616,9 +673,9 @@ export const manifest = {
     { sprite: "board", x: 55, y: 58 },
     { sprite: "stove", x: 95, y: 58 },
     { sprite: "flame", x: 99, y: 55, fps: 4 },
-    { sprite: "pot", x: POT[0], y: POT[1], fps: 3 },
+    { sprite: "pot", x: POT[0], y: POT[1], fps: 3, tally: { on: ["keep"], sprites: POT_STAGES.map((_, n) => `pot${n + 1}`) } },
     { sprite: "steam", x: POT[0] + 4, y: POT[1] - 17, fps: 3 },
-    { sprite: "dog", x: DOG[0], y: DOG[1], fps: 2 },
+    { sprite: "dog", x: DOG[0], y: DOG[1], fps: 2, tally: { on: ["trash", "delete"], sprites: DOG_STAGES.map((_, n) => `dog${n + 1}`) } },
     { sprite: "bowl", x: BOWL[0], y: BOWL[1] + 1 },
     { sprite: "floor", x: 0, y: 80 },
   ],
@@ -631,7 +688,7 @@ export const manifest = {
     delete: [{ sfx: "soupBark", at: 0.04 }, { sfx: "soupGulp", at: 0.26 }, { sfx: "soupPatter", at: 0.3 }, { sfx: "soupDig", at: 0.58 }, { sfx: "soupThud", at: 0.8 }],
   },
   animations: {
-    keep: intoTheSoup("potRich", "INTO THE SOUP"),
+    keep: intoTheSoup("boilPeas", "INTO THE SOUP"),
     move: {
       duration: 2200,
       tracks: [
@@ -670,8 +727,8 @@ export const manifest = {
   },
   variants: {
     keep: [
-      intoTheSoup("potGold", "INTO THE SOUP", []),
-      intoTheSoup("potHerb", "INTO THE SOUP", [
+      intoTheSoup("boilCarrot", "INTO THE SOUP", []),
+      intoTheSoup("boilHerb", "INTO THE SOUP", [
         { sprite: "note", keys: [{ t: 0.7, x: POT[0] + 30, y: POT[1] - 10, alpha: 0 }, { t: 0.76, x: POT[0] + 30, y: POT[1] - 12 }, { t: 1, x: POT[0] + 33, y: POT[1] - 22, alpha: 0 }] },
       ]),
     ],

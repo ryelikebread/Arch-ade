@@ -8,7 +8,7 @@ import { onWindowHidden } from "../lib/hidden";
 import { drawText, textWidth } from "../pixel/font";
 import { kindIcon } from "../pixel/sprites";
 import type { Kind } from "../types";
-import { animationFor, caption, frameAt, poseAt, type Animation, type Captions, type SkinEvent, type SkinManifest, type Track } from "./format";
+import { animationFor, caption, propSprite, frameAt, poseAt, type Animation, type Captions, type SkinEvent, type SkinManifest, type Track } from "./format";
 
 export const MAX_FPS = 30;
 const FILE_PX = 16;
@@ -45,6 +45,8 @@ export class Stage {
   private playing: Playing | null = null;
   /** What was played, newest last, so undo can rewind the same variant. */
   private history: Playing[] = [];
+  /** Decisions so far this session, for scenery with a `tally`. */
+  private counts: Partial<Record<SkinEvent, number>> = {};
   private restKind: Kind | null = null;
   private icons = new Map<Kind, HTMLImageElement>();
   private timer = 0;
@@ -82,12 +84,14 @@ export class Stage {
     this.icon(kind);
     this.playing = { anim: found.anim, started: performance.now(), kind, captions };
     this.history.push(this.playing);
+    this.counts[event] = (this.counts[event] ?? 0) + 1;
     if (this.history.length > 50) this.history.shift();
     this.wake();
   }
 
   /** Undo: play that action's animation backwards, faster, with a rewind sound. */
   rewind(event: SkinEvent, kind: Kind, captions: Captions) {
+    this.counts[event] = Math.max(0, (this.counts[event] ?? 0) - 1);
     const last = this.history.pop() ?? (() => {
       const found = animationFor(this.skin.manifest, event, 0);
       return found && { anim: found.anim, started: 0, kind, captions };
@@ -175,7 +179,10 @@ export class Stage {
       ctx.fillStyle = color;
       ctx.fillRect(0, y, w, (bands[i + 1]?.[0] ?? h) - y);
     });
-    for (const p of m.scene ?? []) this.sprite(p.sprite, frameAt(this.frames(p.sprite), p.fps, now), p.x, p.y, 1, 1);
+    for (const p of m.scene ?? []) {
+      const name = propSprite(p, this.counts);
+      this.sprite(name, frameAt(this.frames(name), p.fps, now), p.x, p.y, 1, 1);
+    }
 
     if (!this.playing) {
       if (this.restKind) this.fileIcon(this.restKind, m.file[0], m.file[1], 1, 1);
