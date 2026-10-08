@@ -675,6 +675,31 @@ describe("undelete: mouse piloting", () => {
     expect(r.w.shots).toBe(5);
   });
 
+  it("when a click can't capture the mouse, the pointer's position steers and the button fires", () => {
+    const r = captured();
+    const input = new KeyInput();
+    input.pointer(300); // right side of the 320-wide view
+    tick(r, input, { on: false });
+    expect(r.w.player.a).toBe(0); // nothing until the mouse has been clicked
+    tick(r, input, { on: false, click: true });
+    for (let i = 0; i < 6; i++) tick(r, input, { on: false });
+    expect(r.w.pointerSteer).toBe(true);
+    const a = r.w.player.a;
+    tick(r, input, { on: false });
+    expect(r.w.player.a).toBeGreaterThan(a);
+    input.pointer(160); // the middle: no turning
+    const b = r.w.player.a;
+    tick(r, input, { on: false });
+    expect(r.w.player.a).toBeCloseTo(b);
+    const shots = r.w.shots;
+    for (let i = 0; i < 10; i++) tick(r, input, { on: false });
+    tick(r, input, { on: false, click: true });
+    expect(r.w.shots).toBe(shots + 1);
+    // a later capture switches back to movement steering
+    tick(r, input, {});
+    expect(r.w.pointerSteer).toBe(false);
+  });
+
   it("the keys still work while the mouse is captured: walk, strafe, turn, fire", () => {
     const r = captured();
     const input = new KeyInput();

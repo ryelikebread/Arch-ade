@@ -250,7 +250,7 @@ The files you just processed come back as the cast:
 
 | Game | Inspired by | Controls |
 | --- | --- | --- |
-| **Undelete** | 90s first-person maze shooters | ↑↓ walk, ←→ turn, X + ←→ strafe, Space fire; or click to steer with the mouse (click fires, Esc lets go) |
+| **Undelete** | 90s first-person maze shooters | ↑↓ walk, ←→ turn, X + ←→ strafe, Space fire; or click to steer with the mouse (click fires, Esc lets go; where the mouse can't be captured, pointing left or right of the middle turns) |
 | **Brick Sort** | brick-breaker paddle games | ←→ or mouse move, Space or click launch (or let go of a caught ball), hold Space laser, X spare ball |
 | **Tidy Hop** | side-scrolling platformers and kitchen stack-'em-ups | ←→ run, Space jump (hold: higher; again in the air with wings), X throw, ↑↓ ladders |
 | **Folder Fleet** | side-scrolling and formation space shooters | arrows move, Space fire (hold), X power pulse |

@@ -30,6 +30,11 @@ const TURN = 0.075;
 /** Mouse turning: radians per screen pixel, and at most this much a tick. */
 export const MOUSE_TURN = 0.004;
 export const MOUSE_MAX = 0.35;
+/** Without a captured mouse (the webview can't lock it), the pointer's distance from the middle turns. */
+const VIEW_MID = 160;
+const STEER_DEAD = 0.15;
+/** Ticks to wait for the mouse to be captured after a click before steering by position. */
+const LOCK_WAIT = 6;
 const AIM_ASSIST = 0.12;
 export const SPREAD_RAYS = [-0.075, 0, 0.075];
 const CENTER_RAY = [0];
@@ -203,6 +208,9 @@ export interface World {
   queue: Int32Array;
   /** The mouse button is firing (it went down while the mouse was captured). */
   trigger: boolean;
+  /** The mouse couldn't be captured, so its position steers and its button fires. */
+  pointerSteer: boolean;
+  lockWait: number;
   sounds: SfxName[];
   lastSfx: Map<SfxName, number>;
   nextId: number;
@@ -343,6 +351,8 @@ export function createWorld(cast: Cast, rng: () => number, folders: string[] = [
     flowCell: -1,
     queue: new Int32Array(1),
     trigger: false,
+    pointerSteer: false,
+    lockWait: 0,
     sounds: [],
     lastSfx: new Map(),
     nextId: all.length,
@@ -838,11 +848,27 @@ function ageFx(w: World) {
   for (let i = w.fx.length - 1; i >= 0; i--) if (++w.fx[i].t >= w.fx[i].ttl) w.fx.splice(i, 1);
 }
 
-/** Turn with the keys (unless strafing), and with the mouse while it's captured. */
+/** Notice when a click didn't capture the mouse (not every webview can), and steer by position then. */
+function mouseMode(w: World, inp: Input) {
+  if (inp.captured()) {
+    w.pointerSteer = false;
+    w.lockWait = 0;
+  } else if (w.lockWait > 0) {
+    if (--w.lockWait === 0) w.pointerSteer = true;
+  } else if (inp.clicked() && !w.pointerSteer) w.lockWait = LOCK_WAIT;
+}
+
+/** Turn with the keys (unless strafing), and with the mouse: by movement while captured, else by where the pointer is. */
 function turn(w: World, inp: Input) {
   const p = w.player;
+  mouseMode(w, inp);
   if (!inp.held("alt")) p.a += TURN * ((inp.held("right") ? 1 : 0) - (inp.held("left") ? 1 : 0));
   if (inp.captured()) p.a += Math.max(-MOUSE_MAX, Math.min(MOUSE_MAX, inp.pointerDX() * MOUSE_TURN));
+  else if (w.pointerSteer) {
+    const x = inp.pointerX();
+    const off = x === null ? 0 : Math.max(-1, Math.min(1, (x - VIEW_MID) / VIEW_MID));
+    if (Math.abs(off) > STEER_DEAD) p.a += TURN * 1.3 * Math.sign(off) * ((Math.abs(off) - STEER_DEAD) / (1 - STEER_DEAD));
+  }
   p.a = Math.atan2(Math.sin(p.a), Math.cos(p.a));
 }
 
@@ -868,8 +894,9 @@ function weapon(w: World, inp: Input) {
   // The mouse fires only once it's captured: the click that captures it
   // doesn't shoot (nor does holding on from it); a click after does, and
   // holding keeps firing.
-  const captured = inp.captured();
-  w.trigger = captured && (inp.clicked() || (w.trigger && inp.mouseHeld()));
+  // Without capture, the button fires once position steering is on.
+  const live = inp.captured() || w.pointerSteer;
+  w.trigger = live && (inp.clicked() || (w.trigger && inp.mouseHeld()));
   if (!(inp.held("fire") || w.trigger) || p.cd > 0) return;
   const mode = p.gun;
   let cd = GUN[mode].cd;
