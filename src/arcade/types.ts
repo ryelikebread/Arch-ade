@@ -15,10 +15,14 @@ export interface ArcadeFile {
   kindLabel: string;
   bytes: number;
   fate: Fate;
+  /** The folder it was in (just the folder's own name), for level titles. */
+  folder?: string;
 }
 
 export interface ArcadeRound {
   files: ArcadeFile[];
+  /** The round's folders, most files first (level titles). May be empty. */
+  folders?: string[];
   /** Where the round came from, for the title screen. */
   source: "File by File" | "Plan";
 }
@@ -96,6 +100,12 @@ export interface Input {
   pointerX(): number | null;
   /** Mouse button went down since the previous update. */
   clicked(): boolean;
+  /** Mouse is down right now. */
+  mouseHeld(): boolean;
+  /** Sideways mouse movement since the previous update, in screen pixels (games with `mouse: "look"`, while captured). */
+  pointerDX(): number;
+  /** The mouse is captured for looking around (after a click on a `mouse: "look"` game). */
+  captured(): boolean;
 }
 
 export interface GameResult {
@@ -114,6 +124,8 @@ export interface GameContext {
   readonly height: number;
   readonly g: CanvasRenderingContext2D;
   readonly cast: Cast;
+  /** Folder names for level titles, most files first; never empty (a generic name if the round has none). */
+  readonly folders: string[];
   readonly input: Input;
   /** Seeded random numbers, 0 <= x < 1. Use this, never Math.random, so a round replays the same. */
   rng(): number;
@@ -147,5 +159,7 @@ export interface GameModule {
   controls: [string, string][];
   /** Game pixels [w, h]. Keep it small: 320x180 or less. */
   size: [number, number];
+  /** "look": a click captures the mouse and sideways movement turns (first-person games). */
+  mouse?: "look";
   create(ctx: GameContext): Game;
 }

@@ -109,16 +109,29 @@ const FATE_OF: Record<FbfAction, Fate> = { keep: "kept", move: "moved", rename: 
 
 /** A File-by-File session's decisions (dry-run ones count too: it's only a game). */
 export function roundFromFbf(results: { entry: FileEntry; record: FbfRecord }[]): ArcadeRound {
-  return {
-    source: "File by File",
-    files: results
-      .filter(({ entry }) => !entry.isDir)
-      .map(({ entry, record }) => ({ name: entry.name, kind: entry.kind, kindLabel: entry.kindLabel, bytes: entry.size, fate: FATE_OF[record.action] })),
-  };
+  const files = results
+    .filter(({ entry }) => !entry.isDir)
+    .map(({ entry, record }) => ({ name: entry.name, kind: entry.kind, kindLabel: entry.kindLabel, bytes: entry.size, fate: FATE_OF[record.action], folder: folderOf(entry.path) }));
+  return { source: "File by File", files, folders: foldersOf(files) };
 }
 
 const dirOf = (p: string) => p.replace(/[\\/][^\\/]*$/, "");
 const nameOf = (p: string) => p.split(/[\\/]/).pop() ?? p;
+/** The name of the folder a file is in. */
+const folderOf = (path: string) => nameOf(dirOf(path)) || undefined;
+
+/** Folder names for level titles: the round's folders, or a stand-in when it has none. */
+export function levelFolders(round: ArcadeRound | null): string[] {
+  const f = round?.folders?.length ? round.folders : round ? foldersOf(round.files) : [];
+  return f.length ? f : ["Files"];
+}
+
+/** Distinct folders of a round's files, most files first. */
+export function foldersOf(files: ArcadeFile[]): string[] {
+  const n = new Map<string, number>();
+  for (const f of files) if (f.folder) n.set(f.folder, (n.get(f.folder) ?? 0) + 1);
+  return [...n.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k);
+}
 
 /** An applied plan's files. Only files the main list knows (it has their kind and size). */
 export function roundFromPlan(plan: Plan, entries: FileEntry[]): ArcadeRound {
@@ -150,9 +163,9 @@ export function roundFromPlan(plan: Plan, entries: FileEntry[]): ArcadeRound {
   const files: ArcadeFile[] = [];
   for (const e of entries) {
     const fate = fates.get(e.path);
-    if (fate && !e.isDir) files.push({ name: e.name, kind: e.kind, kindLabel: e.kindLabel, bytes: e.size, fate });
+    if (fate && !e.isDir) files.push({ name: e.name, kind: e.kind, kindLabel: e.kindLabel, bytes: e.size, fate, folder: folderOf(e.path) });
   }
-  return { source: "Plan", files };
+  return { source: "Plan", files, folders: foldersOf(files) };
 }
 
 // ---------- settings ----------

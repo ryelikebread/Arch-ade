@@ -155,3 +155,12 @@ describe("every game", () => {
     });
   }
 });
+
+describe("folders for level titles", () => {
+  it("come from where the files were, most files first", async () => {
+    const { foldersOf, levelFolders } = await import("./round");
+    const f = (folder: string) => ({ name: "x", kind: "text" as const, kindLabel: "Text", bytes: 1, fate: "kept" as const, folder });
+    expect(foldersOf([f("Work"), f("Photos"), f("Photos")])).toEqual(["Photos", "Work"]);
+    expect(levelFolders({ source: "Plan", files: [] })).toEqual(["Files"]);
+  });
+});

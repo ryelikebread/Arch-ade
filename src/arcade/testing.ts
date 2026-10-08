@@ -2,7 +2,7 @@
 // has no 2D context): a do-nothing context, scripted input, and a runner.
 
 import { KeyInput } from "./input";
-import { cast as castRound, seeded } from "./round";
+import { cast as castRound, levelFolders, seeded } from "./round";
 import type { ArcadeFile, ArcadeRound, Cast, Fate, GameContext, GameModule, GameResult } from "./types";
 import type { Kind } from "../types";
 
@@ -35,9 +35,11 @@ export function file(name: string, kind: Kind, bytes: number, fate: Fate): Arcad
 
 /** A typical round: a few foes of different kinds and sizes, and a few friends. */
 export function sampleRound(): ArcadeRound {
+  const FOLDERS = ["Downloads", "Photos", "Work", "Music"];
   return {
     source: "File by File",
-    files: [
+    folders: FOLDERS,
+    files: ([
       file("holiday.jpg", "image", 3_000_000, "trashed"),
       file("old-report.pdf", "pdf", 800_000, "deleted"),
       file("notes.md", "markdown", 2_000, "trashed"),
@@ -54,7 +56,7 @@ export function sampleRound(): ArcadeRound {
       file("bundle.zip", "archive", 10_000_000, "kept"),
       file("tool.pkg", "installer", 50_000_000, "kept"),
       file("misc.dat", "unknown", 100, "kept"),
-    ],
+    ] as ArcadeFile[]).map((f, i) => ({ ...f, folder: FOLDERS[i % FOLDERS.length] })),
   };
 }
 
@@ -77,6 +79,7 @@ export function harness(mod: GameModule, round: ArcadeRound | Cast = sampleRound
     height,
     g: nullContext(),
     cast: "files" in round ? castRound(round) : round,
+    folders: levelFolders("files" in round ? round : null),
     input,
     rng: seeded(seed),
     sfx: () => {},

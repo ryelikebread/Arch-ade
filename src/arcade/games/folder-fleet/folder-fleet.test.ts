@@ -11,7 +11,7 @@ const rng = (seed = 3) => {
   let a = seed;
   return () => ((a = (a * 16807) % 2147483647) / 2147483647);
 };
-const noInput = { held: () => false, pressed: () => false, pointerX: () => null, clicked: () => false };
+const noInput = { held: () => false, pressed: () => false, pointerX: () => null, clicked: () => false, mouseHeld: () => false, pointerDX: () => 0, captured: () => false };
 
 const bigRound = (): ArcadeRound => {
   const kinds = ["image", "pdf", "markdown", "audio", "video", "archive", "installer", "unknown", "xlsx", "json"] as const;

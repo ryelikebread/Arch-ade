@@ -41,8 +41,8 @@ function playing(r: ArcadeRound = sampleRound(), seed = 1) {
   return g;
 }
 
-const idle: Input = { held: () => false, pressed: () => false, pointerX: () => null, clicked: () => false };
-const holding = (...bs: string[]): Input => ({ held: (b) => bs.includes(b), pressed: () => false, pointerX: () => null, clicked: () => false });
+const idle: Input = { held: () => false, pressed: () => false, pointerX: () => null, clicked: () => false, mouseHeld: () => false, pointerDX: () => 0, captured: () => false };
+const holding = (...bs: string[]): Input => ({ held: (b) => bs.includes(b), pressed: () => false, pointerX: () => null, clicked: () => false, mouseHeld: () => false, pointerDX: () => 0, captured: () => false });
 const ticks = (w: World, n: number, input: Input = idle) => {
   for (let i = 0; i < n; i++) step(w, input);
 };

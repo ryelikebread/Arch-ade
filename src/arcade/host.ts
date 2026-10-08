@@ -11,8 +11,9 @@ import { arcadeIcon } from "../pixel/sprites";
 import { h } from "../ui/dom";
 import type { Kind } from "../types";
 import { KeyInput } from "./input";
+import { addScore, forGame, normalizeScores, type ScoreEntry } from "./scores";
 import { GAMES, type GameEntry } from "./registry";
-import { cast as castRound, seeded, seedOf } from "./round";
+import { cast as castRound, levelFolders, seeded, seedOf } from "./round";
 import type { ArcadeRound, Game, GameContext, GameModule, GameResult } from "./types";
 
 export const FPS = 30;
@@ -28,8 +29,8 @@ export interface ArcadeOptions {
 export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
   const theCast = castRound(round);
   let attempt = 0;
-  let best: Record<string, number> = {};
-  api.getSettings().then((s) => (best = (s.arcadeBest as Record<string, number> | undefined) ?? {}), () => {});
+  let scores: ScoreEntry[] = [];
+  api.getSettings().then((s) => (scores = normalizeScores(s.arcadeScores, s.arcadeBest)), () => {});
 
   const screen = h("div", { class: "arcade-screen" });
   const dialog = h("dialog", { class: "arcade arcade-host", "aria-label": "Arcade" }, h("div", { class: "arcade-frame" }, screen));
@@ -110,9 +111,28 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
     const items = [
       ...GAMES.map((g) => ({ label: g.title, hint: g.inspiredBy, run: () => play(g) })),
       { label: "Random", hint: "Any of the four", run: () => play(randomGame()) },
+      { label: "Leaderboard", hint: "Your best scores so far, on this computer", run: () => leaderboard() },
       { label: "Close", hint: "", run: close },
     ];
     menu("Arcade", [summary()], items, start);
+  }
+
+  /** Past scores per game, best first (`mark` highlights one just made). */
+  function leaderboard(mark?: ScoreEntry, back = () => picker(GAMES.length + 1)) {
+    const date = (at: number) => (at ? new Date(at).toLocaleDateString() : "earlier");
+    const boards = GAMES.map((g) => {
+      const rows = forGame(scores, g.id).slice(0, 5);
+      return h(
+        "div",
+        { class: "arcade-board" },
+        h("h3", {}, g.title),
+        rows.length
+          ? h("table", {}, ...rows.map((e, i) =>
+              h("tr", { class: e === mark ? "mine" : "" }, h("td", {}, `${i + 1}.`), h("td", { class: "num" }, String(e.score)), h("td", {}, e.won ? "WIN" : ""), h("td", {}, e.folder || e.source), h("td", {}, date(e.at)))))
+          : h("p", { class: "arcade-sub" }, "No scores yet"),
+      );
+    });
+    menu("Leaderboard", [h("div", { class: "arcade-boards" }, ...boards)], [{ label: "Back", run: back }], 0, back);
   }
 
   function randomGame(): GameEntry {
@@ -169,6 +189,7 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
       height: h0,
       g,
       cast: theCast,
+      folders: levelFolders(round),
       input,
       rng,
       sfx: (name) => sound.fx(name),
@@ -260,15 +281,40 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
       if (!stopped && !paused && !hidden) showPause();
     };
     const onMove = (ev: MouseEvent) => {
+      if (input.captured()) return input.look(ev.movementX);
       const r = canvas.getBoundingClientRect();
       input.pointer(((ev.clientX - r.left) / r.width) * w);
     };
-    const onDown = () => input.pointerDown();
+    // First-person games: a click captures the mouse so moving it turns.
+    // Esc (or anything else) letting go of it pauses, like losing focus.
+    const look = mod.mouse === "look";
+    const onDown = () => {
+      input.pointerDown();
+      if (look && !input.captured()) {
+        try {
+          const p = canvas.requestPointerLock() as unknown;
+          if (p instanceof Promise) p.catch(() => {}); // not supported: the pointer's position steers instead
+        } catch {
+          /* not supported */
+        }
+      }
+    };
+    const onRelease = () => input.pointerUp();
+    const onLock = () => {
+      const on = document.pointerLockElement === canvas;
+      input.setCaptured(on);
+      if (!on && !stopped && !paused && !hidden) showPause();
+    };
     dialog.addEventListener("keyup", onUp);
     window.addEventListener("blur", onBlur);
     window.addEventListener("resize", fit);
+    window.addEventListener("mouseup", onRelease);
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mousedown", onDown);
+    if (look) {
+      document.addEventListener("pointerlockchange", onLock);
+      canvas.style.cursor = "crosshair";
+    }
 
     function stop() {
       if (stopped) return;
@@ -278,6 +324,9 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
       dialog.removeEventListener("keyup", onUp);
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("resize", fit);
+      window.removeEventListener("mouseup", onRelease);
+      document.removeEventListener("pointerlockchange", onLock);
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
       try {
         game.destroy?.();
       } catch {
@@ -290,6 +339,7 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
     const pauseOverlay = h("div", { class: "arcade-pause" });
     const showPause = () => {
       paused = true;
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
       halt();
       input.release();
       let at = 0;
@@ -337,24 +387,28 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
 
   function finished(entry: GameEntry, mod: GameModule, r: GameResult) {
     sound.fx(r.won ? "win" : "gameover");
-    const prev = best[entry.id] ?? 0;
+    const prev = forGame(scores, entry.id)[0]?.score ?? 0;
+    const mine: ScoreEntry = { game: entry.id, score: r.score, won: r.won, at: Date.now(), folder: levelFolders(round)[0], files: round.files.length, source: round.source };
+    const added = addScore(scores, mine);
+    scores = added.list;
+    api.setSetting("arcadeScores", scores).catch(() => {});
     const record = r.score > prev;
-    if (record) {
-      best = { ...best, [entry.id]: r.score };
-      api.setSetting("arcadeBest", best).catch(() => {});
-    }
-    menu(
-      r.won ? "You win!" : "Game over",
-      [
-        h("p", { class: "arcade-big" }, `Score ${r.score}${record ? "  New best!" : `  Best ${Math.max(prev, r.score)}`}`),
-        h("p", { class: "arcade-sub" }, `${r.defeated} of ${r.foes} foes beaten · ${r.collected} pickup${r.collected === 1 ? "" : "s"} collected`),
-      ],
-      [
-        { label: "Play again", run: () => (attempt++, run(entry, mod)) },
-        { label: "Other game", run: () => picker(GAMES.indexOf(entry)) },
-        { label: "Close", run: close },
-      ],
-    );
+    const place = added.rank && !record ? `  #${added.rank} on the leaderboard` : "";
+    const screen = () =>
+      menu(
+        r.won ? "You win!" : "Game over",
+        [
+          h("p", { class: "arcade-big" }, `Score ${r.score}${record ? "  New best!" : `  Best ${prev}${place}`}`),
+          h("p", { class: "arcade-sub" }, `${r.defeated} of ${r.foes} foes beaten · ${r.collected} pickup${r.collected === 1 ? "" : "s"} collected`),
+        ],
+        [
+          { label: "Play again", run: () => (attempt++, run(entry, mod)) },
+          { label: "Other game", run: () => picker(GAMES.indexOf(entry)) },
+          { label: "Leaderboard", run: () => leaderboard(added.rank ? mine : undefined, screen) },
+          { label: "Close", run: close },
+        ],
+      );
+    screen();
   }
 
   function failed(entry: GameEntry, why: string) {

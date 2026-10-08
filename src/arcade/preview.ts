@@ -12,7 +12,7 @@ import { arcadeIcon } from "../pixel/sprites";
 import type { Kind } from "../types";
 import { KeyInput } from "./input";
 import { GAMES } from "./registry";
-import { cast, seeded } from "./round";
+import { cast, levelFolders, seeded } from "./round";
 import { file, sampleRound } from "./testing";
 import type { ArcadeRound, Button, GameContext, GameResult } from "./types";
 
@@ -45,7 +45,8 @@ async function main() {
   document.body.append(canvas, out);
   const g = canvas.getContext("2d")!;
   g.imageSmoothingEnabled = false;
-  const theCast = cast(roundFor(q.get("round")));
+  const theRound = roundFor(q.get("round"));
+  const theCast = cast(theRound);
   const icons = new Map<Kind, HTMLImageElement>();
   await Promise.all(
     [...new Set([...theCast.foes, ...theCast.friends].flatMap((x) => (x.file ? [x.file.kind] : [])))].map(
@@ -65,6 +66,7 @@ async function main() {
     height: h,
     g,
     cast: theCast,
+    folders: levelFolders(theRound),
     input,
     rng: seeded(Number(q.get("seed") ?? 1)),
     sfx: () => {},

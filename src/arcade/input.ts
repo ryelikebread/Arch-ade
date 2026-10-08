@@ -21,6 +21,9 @@ export class KeyInput implements Input {
   private edge = new Set<Button>();
   private px: number | null = null;
   private click = false;
+  private mouseDown = false;
+  private dx = 0;
+  private lock = false;
 
   keydown(key: string): boolean {
     const b = buttonFor(key);
@@ -43,6 +46,21 @@ export class KeyInput implements Input {
 
   pointerDown() {
     this.click = true;
+    this.mouseDown = true;
+  }
+
+  pointerUp() {
+    this.mouseDown = false;
+  }
+
+  /** Movement while the mouse is captured. */
+  look(dx: number) {
+    this.dx += dx;
+  }
+
+  setCaptured(on: boolean) {
+    this.lock = on;
+    this.dx = 0;
   }
 
   /** Forget everything held (the window lost focus, or the game was paused). */
@@ -50,12 +68,15 @@ export class KeyInput implements Input {
     this.down.clear();
     this.edge.clear();
     this.click = false;
+    this.mouseDown = false;
+    this.dx = 0;
   }
 
   /** Call after each update: "pressed" only lasts one tick. */
   endTick() {
     this.edge.clear();
     this.click = false;
+    this.dx = 0;
   }
 
   held(b: Button) {
@@ -72,5 +93,17 @@ export class KeyInput implements Input {
 
   clicked() {
     return this.click;
+  }
+
+  mouseHeld() {
+    return this.mouseDown;
+  }
+
+  pointerDX() {
+    return this.dx;
+  }
+
+  captured() {
+    return this.lock;
   }
 }

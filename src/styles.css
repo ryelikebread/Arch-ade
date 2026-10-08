@@ -230,3 +230,9 @@ dialog.arcade-host { width: fit-content; max-width: 96vw; min-width: min(560px, 
 .arcade-canvas { display: block; background: #000; image-rendering: pixelated; }
 .arcade-pause { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 15%; background: rgba(7, 4, 15, 0.86); }
 .arcade-pause h2 { margin-bottom: 10px; }
+.arcade-boards { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 4px 0 8px; }
+.arcade-board h3 { font: 10px var(--pixel-font); color: #ffd23f; margin: 0 0 2px; }
+.arcade-board table { border-collapse: collapse; font-size: 11px; width: 100%; }
+.arcade-board td { padding: 0 4px 0 0; white-space: nowrap; color: #c9bfe8; }
+.arcade-board td.num { text-align: right; color: #f4ecff; }
+.arcade-board tr.mine td { color: #6bff8f; }
