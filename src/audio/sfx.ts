@@ -6,7 +6,7 @@ import { noteHz, render, type Voice } from "./synth";
 
 const n = (name: string) => noteHz(name)!;
 
-const RECIPES = {
+const BASE = {
   /** A short bright tick. */
   blip: [{ wave: "square", start: 0, dur: 0.06, f0: 1320, vol: 0.25, duty: 0.25 }],
   /** A cork popping. */
@@ -51,6 +51,11 @@ const RECIPES = {
   ],
   /** A wobbling tractor beam. */
   beam: [{ wave: "square", start: 0, dur: 0.95, f0: 280, f1: 880, vol: 0.18, duty: 0.25, attack: 0.08, release: 0.2, vib: [11, 2.5] }],
+  /** A tape rewinding: a fast falling warble (File by File's undo). */
+  rewind: [
+    { wave: "square", start: 0, dur: 0.45, f0: 1800, f1: 300, vol: 0.12, duty: 0.25, vib: [28, 1.5], release: 0.1 },
+    { wave: "noise", start: 0, dur: 0.45, f0: 5000, vol: 0.08, decay: 4, lp: [3000, 900] },
+  ],
   /** A quick news-desk sting. */
   jingle: [
     ...(["G5", "C6", "E6"] as const).map((name, i): Voice => ({ wave: "square", start: i * 0.09, dur: 0.09, f0: n(name), vol: 0.2, duty: 0.25 })),
@@ -59,7 +64,18 @@ const RECIPES = {
   ],
 } satisfies Record<string, Voice[]>;
 
-export type SfxName = keyof typeof RECIPES;
+// More effects live in effects/*.ts (one file per skin), each exporting
+// `effects`: name → voices. Names must not repeat across files.
+const MORE = import.meta.glob<{ effects: Record<string, Voice[]> }>("./effects/*.ts", { eager: true });
+const RECIPES: Record<string, Voice[]> = { ...BASE };
+for (const k of Object.keys(MORE).sort())
+  for (const [name, voices] of Object.entries(MORE[k].effects)) {
+    if (Object.hasOwn(RECIPES, name)) throw new Error(`sound effect ${name} is defined twice`);
+    RECIPES[name] = voices;
+  }
+
+/** A built-in effect's name (the base ones are listed for autocomplete). */
+export type SfxName = keyof typeof BASE | (string & {});
 export const SFX_NAMES = Object.keys(RECIPES) as SfxName[];
 
 export function isSfx(name: unknown): name is SfxName {

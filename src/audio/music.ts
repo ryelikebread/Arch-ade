@@ -8,20 +8,17 @@ import { noteHz, parseLine, render, soften, type Voice, type Wave } from "./synt
 export const STEPS_PER_BAR = 16;
 
 /** Chord tones by name; the first is the bass note, the last the fifth. */
-const CHORDS = {
-  Am: ["A", "C", "E"],
-  A: ["A", "C#", "E"],
-  B: ["B", "D#", "F#"],
-  Bb: ["Bb", "D", "F"],
-  C: ["C", "E", "G"],
-  D: ["D", "F#", "A"],
-  Dm: ["D", "F", "A"],
-  E: ["E", "G#", "B"],
-  Em: ["E", "G", "B"],
-  F: ["F", "A", "C"],
-  G: ["G", "B", "D"],
-} as const;
-export type Chord = keyof typeof CHORDS;
+const ROOTS = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"] as const;
+const at = (i: number) => ROOTS[((i % 12) + 12) % 12];
+/** Every major and minor triad (C, Cm, F#, F#m, Bb, Bbm…), spelled with the names noteHz knows. */
+const CHORDS = Object.fromEntries(
+  ROOTS.flatMap((r, i) => [
+    [r, [r, at(i + 4), at(i + 7)]],
+    [`${r}m`, [r, at(i + 3), at(i + 7)]],
+  ]),
+) as Record<string, readonly [string, string, string]>;
+type Root = (typeof ROOTS)[number];
+export type Chord = Root | `${Root}m`;
 
 export interface Song {
   id: string;
@@ -39,7 +36,7 @@ export interface Song {
   bars: { chord: Chord; lead: string }[];
 }
 
-export const SONGS: Song[] = [
+const BASE: Song[] = [
   {
     id: "tidy-up-tonight",
     title: "Tidy Up Tonight",
@@ -129,6 +126,15 @@ export const SONGS: Song[] = [
     ],
   },
 ];
+
+// More songs live in songs/*.ts (one file per station or skin), each exporting
+// `songs`. A station plays its songs in order, in the order the files sort.
+const MORE = import.meta.glob<{ songs: Song[] }>("./songs/*.ts", { eager: true });
+
+export const SONGS: Song[] = [...BASE, ...Object.keys(MORE).sort().flatMap((k) => MORE[k].songs)];
+
+/** The songs on a station, in play order. */
+export const songsOn = (station: string) => SONGS.filter((s) => s.station === station);
 
 export const stepSeconds = (song: Song) => 60 / song.bpm / 4;
 export const songSeconds = (song: Song) => song.bars.length * STEPS_PER_BAR * stepSeconds(song);

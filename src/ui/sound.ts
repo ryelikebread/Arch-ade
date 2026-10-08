@@ -43,8 +43,8 @@ export function soundMenu() {
     {
       label: "Now playing",
       value: () => {
-        const n = sound.my.tracks.length;
-        return sound.station.id === MY_MUSIC && n ? `${sound.title} (${sound.trackNumber}/${n})` : sound.title;
+        const n = sound.trackCount;
+        return n > 1 ? `${sound.title} (${sound.trackNumber}/${n})` : sound.title;
       },
       enter: () => sound.nextTrack(),
     },

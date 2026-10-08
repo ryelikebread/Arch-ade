@@ -64,6 +64,8 @@ export interface Animation {
   /** Milliseconds. */
   duration: number;
   tracks: Track[];
+  /** Sounds for this animation alone, instead of the skin's `sounds` for the action. */
+  sounds?: Cue[];
 }
 
 /** A sound effect at a point in an animation (0..1 of its duration). */
@@ -87,8 +89,12 @@ export interface SkinManifest {
   file: [number, number];
   sprites: Record<string, SpriteRect>;
   animations: Partial<Record<SkinEvent, Animation>>;
+  /** More animations per action; each time, one of the main one and these is picked at random. */
+  variants?: Partial<Record<SkinEvent, Animation[]>>;
   /** Sound effects per action; "delete" falls back to "trash". Optional. */
   sounds?: Partial<Record<SkinEvent, Cue[]>>;
+  /** A built-in song id to play while this skin is on (when music is playing). */
+  music?: string;
 }
 
 const COLOR = /^#([0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -139,54 +145,63 @@ export function validateSkin(raw: unknown): SkinManifest | string[] {
   const file = m.file as unknown[];
   if (!Array.isArray(file) || file.length !== 2 || !inStage(file[0], file[1])) errs.push("file must be [x, y]");
 
+  const checkCues = (where: string, cues: unknown) => {
+    if (!Array.isArray(cues) || cues.length > 16) return void errs.push(`${where} must be a list of up to 16 cues`);
+    cues.forEach((c: Cue, i) => {
+      if (!c || !isSfx(c.sfx)) errs.push(`${where} cue ${i + 1}: unknown sound ${c?.sfx}`);
+      else if (!num(c.at, 0, 1)) errs.push(`${where} cue ${i + 1}: at must be 0..1`);
+    });
+  };
+  const checkAnim = (ev: string, a: Animation) => {
+    if (!a || !num(a.duration, 100, 10000)) errs.push(`${ev}: duration must be 100..10000 ms`);
+    if (a?.sounds !== undefined) checkCues(`${ev} sounds`, a.sounds);
+    if (!a || !Array.isArray(a.tracks) || a.tracks.length > 64) return void errs.push(`${ev}: tracks must be a list of up to 64`);
+    a.tracks.forEach((t, i) => {
+      const where = `${ev} track ${i + 1}`;
+      if (!t || (typeof t.sprite === "string") === (typeof t.text === "string")) errs.push(`${where}: needs either sprite or text`);
+      else if (t.sprite !== undefined && !known(t.sprite)) errs.push(`${where}: unknown sprite ${t.sprite}`);
+      if (t?.text !== undefined && (t.text.length > 80 || (t.color !== undefined && !COLOR.test(t.color)))) errs.push(`${where}: text too long or bad color`);
+      if (t?.fps !== undefined && !num(t.fps, 0, 30)) errs.push(`${where}: fps must be 0..30`);
+      if (t?.once !== undefined && typeof t.once !== "boolean") errs.push(`${where}: once must be true or false`);
+      if (t?.clip !== undefined && !(Array.isArray(t.clip) && t.clip.length === 4 && t.clip.every((v) => num(v, -W, 2 * W)))) errs.push(`${where}: clip must be [x, y, w, h]`);
+      const keys = t?.keys;
+      if (!Array.isArray(keys) || keys.length < 1 || keys.length > 64) return void errs.push(`${where}: needs 1..64 keys`);
+      keys.forEach((k, j) => {
+        const ok = k && num(k.t, 0, 1) && inStage(k.x, k.y) && (j === 0 || k.t >= keys[j - 1].t)
+          && (k.alpha === undefined || num(k.alpha, 0, 1)) && (k.scale === undefined || num(k.scale, 0, 8))
+          && (k.arc === undefined || num(k.arc, -H, H)) && (k.ease === undefined || ["linear", "in", "out", "inOut"].includes(k.ease));
+        if (!ok) errs.push(`${where} key ${j + 1}: t 0..1 in order, x/y on stage, alpha 0..1, scale 0..8`);
+      });
+    });
+  };
+
   const anims = m.animations as Record<string, Animation> | undefined;
   if (!anims || typeof anims !== "object") errs.push("animations is required");
   else {
     for (const ev of REQUIRED) if (!anims[ev]) errs.push(`animations.${ev} is required`);
     for (const [ev, a] of Object.entries(anims)) {
-      if (!SKIN_EVENTS.includes(ev as SkinEvent)) {
-        errs.push(`unknown animation ${ev}`);
-        continue;
-      }
-      if (!a || !num(a.duration, 100, 10000)) errs.push(`${ev}: duration must be 100..10000 ms`);
-      if (!a || !Array.isArray(a.tracks) || a.tracks.length > 64) {
-        errs.push(`${ev}: tracks must be a list of up to 64`);
-        continue;
-      }
-      a.tracks.forEach((t, i) => {
-        const where = `${ev} track ${i + 1}`;
-        if (!t || (typeof t.sprite === "string") === (typeof t.text === "string")) errs.push(`${where}: needs either sprite or text`);
-        else if (t.sprite !== undefined && !known(t.sprite)) errs.push(`${where}: unknown sprite ${t.sprite}`);
-        if (t?.text !== undefined && (t.text.length > 80 || (t.color !== undefined && !COLOR.test(t.color)))) errs.push(`${where}: text too long or bad color`);
-        if (t?.fps !== undefined && !num(t.fps, 0, 30)) errs.push(`${where}: fps must be 0..30`);
-        if (t?.once !== undefined && typeof t.once !== "boolean") errs.push(`${where}: once must be true or false`);
-        if (t?.clip !== undefined && !(Array.isArray(t.clip) && t.clip.length === 4 && t.clip.every((v) => num(v, -W, 2 * W)))) errs.push(`${where}: clip must be [x, y, w, h]`);
-        const keys = t?.keys;
-        if (!Array.isArray(keys) || keys.length < 1 || keys.length > 64) {
-          errs.push(`${where}: needs 1..64 keys`);
-          return;
-        }
-        keys.forEach((k, j) => {
-          const ok = k && num(k.t, 0, 1) && inStage(k.x, k.y) && (j === 0 || k.t >= keys[j - 1].t)
-            && (k.alpha === undefined || num(k.alpha, 0, 1)) && (k.scale === undefined || num(k.scale, 0, 8))
-            && (k.arc === undefined || num(k.arc, -H, H)) && (k.ease === undefined || ["linear", "in", "out", "inOut"].includes(k.ease));
-          if (!ok) errs.push(`${where} key ${j + 1}: t 0..1 in order, x/y on stage, alpha 0..1, scale 0..8`);
-        });
-      });
+      if (!SKIN_EVENTS.includes(ev as SkinEvent)) errs.push(`unknown animation ${ev}`);
+      else checkAnim(ev, a);
     }
   }
+  if (m.variants !== undefined) {
+    const variants = m.variants as Record<string, unknown>;
+    if (!variants || typeof variants !== "object" || Array.isArray(variants)) errs.push("variants must be an object of action: [animations]");
+    else
+      for (const [ev, list] of Object.entries(variants)) {
+        if (!SKIN_EVENTS.includes(ev as SkinEvent)) errs.push(`variants: unknown action ${ev}`);
+        else if (!Array.isArray(list) || list.length < 1 || list.length > 8) errs.push(`variants.${ev} must be a list of 1..8 animations`);
+        else list.forEach((a, i) => checkAnim(`${ev} variant ${i + 1}`, a as Animation));
+      }
+  }
+  if (m.music !== undefined && (typeof m.music !== "string" || !/^[a-z0-9-]{1,40}$/.test(m.music))) errs.push("music must be a song id");
   if (m.sounds !== undefined) {
     const sounds = m.sounds as Record<string, unknown>;
     if (!sounds || typeof sounds !== "object" || Array.isArray(sounds)) errs.push("sounds must be an object of action: [cues]");
     else
       for (const [ev, cues] of Object.entries(sounds)) {
         if (!SKIN_EVENTS.includes(ev as SkinEvent)) errs.push(`sounds: unknown action ${ev}`);
-        else if (!Array.isArray(cues) || cues.length > 16) errs.push(`sounds.${ev} must be a list of up to 16 cues`);
-        else
-          cues.forEach((c: Cue, i) => {
-            if (!c || !isSfx(c.sfx)) errs.push(`sounds.${ev} cue ${i + 1}: unknown sound ${c?.sfx}`);
-            else if (!num(c.at, 0, 1)) errs.push(`sounds.${ev} cue ${i + 1}: at must be 0..1`);
-          });
+        else checkCues(`sounds.${ev}`, cues);
       }
   }
   return errs.length ? errs : (m as unknown as SkinManifest);
@@ -241,6 +256,17 @@ export interface Captions {
   newName?: string;
   dest?: string;
   kind?: string;
+}
+
+/** The animation and sounds for an action: "delete" falls back to "trash"; variants are picked by `pick` (0..1). */
+export function animationFor(m: SkinManifest, event: SkinEvent, pick: number): { anim: Animation; cues: Cue[] } | null {
+  const ev: SkinEvent = m.animations[event] ? event : event === "delete" ? "trash" : event;
+  const main = m.animations[ev];
+  if (!main) return null;
+  const all = [main, ...(m.variants?.[ev] ?? [])];
+  const anim = all[Math.min(all.length - 1, Math.floor(pick * all.length))];
+  const cues = anim.sounds ?? m.sounds?.[event] ?? (event === "delete" ? m.sounds?.trash : undefined) ?? [];
+  return { anim, cues };
 }
 
 export function caption(template: string, c: Captions): string {

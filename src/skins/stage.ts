@@ -8,7 +8,7 @@ import { onWindowHidden } from "../lib/hidden";
 import { drawText, textWidth } from "../pixel/font";
 import { kindIcon } from "../pixel/sprites";
 import type { Kind } from "../types";
-import { caption, frameAt, poseAt, type Animation, type Captions, type SkinEvent, type SkinManifest, type Track } from "./format";
+import { animationFor, caption, frameAt, poseAt, type Animation, type Captions, type SkinEvent, type SkinManifest, type Track } from "./format";
 
 export const MAX_FPS = 30;
 const FILE_PX = 16;
@@ -32,12 +32,19 @@ interface Playing {
   started: number;
   kind: Kind;
   captions: Captions;
+  /** Played backwards (an undo). */
+  reverse?: boolean;
 }
+
+/** How long a rewind takes: quicker than the original. */
+const REWIND_SPEED = 2;
 
 export class Stage {
   readonly canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private playing: Playing | null = null;
+  /** What was played, newest last, so undo can rewind the same variant. */
+  private history: Playing[] = [];
   private restKind: Kind | null = null;
   private icons = new Map<Kind, HTMLImageElement>();
   private timer = 0;
@@ -69,12 +76,27 @@ export class Stage {
 
   /** Play the animation (and sounds) for an action on a file; "delete" falls back to "trash". */
   play(event: SkinEvent, kind: Kind, captions: Captions) {
-    const { animations: anims, sounds } = this.skin.manifest;
-    const anim = anims[event] ?? (event === "delete" ? anims.trash : undefined);
-    if (!anim) return;
-    sound.cue(sounds?.[event] ?? (event === "delete" ? sounds?.trash : undefined) ?? [], anim.duration);
+    const found = animationFor(this.skin.manifest, event, Math.random());
+    if (!found) return;
+    sound.cue(found.cues, found.anim.duration);
     this.icon(kind);
-    this.playing = { anim, started: performance.now(), kind, captions };
+    this.playing = { anim: found.anim, started: performance.now(), kind, captions };
+    this.history.push(this.playing);
+    if (this.history.length > 50) this.history.shift();
+    this.wake();
+  }
+
+  /** Undo: play that action's animation backwards, faster, with a rewind sound. */
+  rewind(event: SkinEvent, kind: Kind, captions: Captions) {
+    const last = this.history.pop() ?? (() => {
+      const found = animationFor(this.skin.manifest, event, 0);
+      return found && { anim: found.anim, started: 0, kind, captions };
+    })();
+    if (!last) return;
+    const anim = { ...last.anim, duration: last.anim.duration / REWIND_SPEED };
+    sound.cue([{ sfx: "rewind", at: 0 }], anim.duration);
+    this.icon(kind);
+    this.playing = { ...last, anim, kind, started: performance.now(), reverse: true };
     this.wake();
   }
 
@@ -151,8 +173,9 @@ export class Stage {
     }
     const { anim, started, kind, captions } = this.playing;
     const ms = now - started;
-    const p = Math.min(1, ms / anim.duration);
-    for (const t of anim.tracks) this.track(t, p, ms - (t.keys[0]?.t ?? 0) * anim.duration, kind, captions);
+    const fwd = Math.min(1, ms / anim.duration);
+    const p = this.playing.reverse ? 1 - fwd : fwd;
+    for (const t of anim.tracks) this.track(t, p, p * anim.duration - (t.keys[0]?.t ?? 0) * anim.duration, kind, captions);
   }
 
   /** `ms` is time since this track appeared. */

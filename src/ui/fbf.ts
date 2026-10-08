@@ -10,6 +10,7 @@ import { FbfSession, fbfKey, quickPicks, remember, stemRange, type FbfAction, ty
 import { baseName } from "../lib/format";
 import { listSkins, loadSkin, MINIMAL_ID, type SkinChoice } from "../skins";
 import { Stage } from "../skins/stage";
+import { sound } from "../audio/player";
 import { soundMenu } from "./sound";
 import type { Decision, FileEntry, PlanOut } from "../types";
 import { h, modal } from "./dom";
@@ -87,6 +88,7 @@ export async function fileByFile(o: FbfOptions) {
   dialog.addEventListener("close", () => {
     document.removeEventListener("keydown", onKey);
     stage?.destroy();
+    sound.setTheme(null);
     dialog.remove();
     if (changed) o.onChanged();
     o.onClose();
@@ -115,6 +117,7 @@ export async function fileByFile(o: FbfOptions) {
       note(`Skin ${choice.name} couldn't load: ${e}`, true);
       stageWrap.hidden = true;
     }
+    sound.setTheme(choice.manifest?.music ?? null);
     api.setSetting("fbfSkin", choice.id).catch(() => {});
   }
   listSkins().then(({ skins: list, problems }) => {
@@ -246,8 +249,10 @@ export async function fileByFile(o: FbfOptions) {
     if (!last) return note("Nothing to undo in this session.");
     const { record } = last;
     const name = session.items[last.index].name;
+    const rewind = () => stage?.rewind(record.action, session.items[last.index].kind, { name, newName: record.detail, dest: record.detail, kind: session.items[last.index].kindLabel });
     if (record.planId == null) {
       session.undoLast();
+      rewind();
       note(`Undid: ${record.dryRun && record.action !== "keep" ? WOULD[record.action].toLowerCase() : VERB[record.action].toLowerCase()} ${name}.`);
       return render();
     }
@@ -263,6 +268,7 @@ export async function fileByFile(o: FbfOptions) {
       const r = await api.undo();
       if (r?.error) return note(`Undo stopped: ${r.error}`, true);
       session.undoLast();
+      rewind();
       changed = true;
       note(`Undid: ${VERB[record.action].toLowerCase()} ${name}.`);
     } catch (e) {

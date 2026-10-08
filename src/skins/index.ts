@@ -3,10 +3,6 @@
 // <app data>/skins/.
 
 import { api } from "../api";
-import spaceManifest from "./builtin/space/manifest.json";
-import spaceSheet from "./builtin/space/sheet.png";
-import volcanoManifest from "./builtin/volcano/manifest.json";
-import volcanoSheet from "./builtin/volcano/sheet.png";
 import { validateSkin, type SkinManifest } from "./format";
 import { loadImage, type LoadedSkin } from "./stage";
 
@@ -28,10 +24,19 @@ function builtIn(raw: unknown, sheetUrl: string): SkinChoice {
   return { id: m.id, name: m.name, manifest: m, sheetUrl };
 }
 
+// Every builtin/<id>/ folder (made by scripts/build-skins.mjs). Volcano and
+// Space come first, as they always have; the rest follow by name.
+const MANIFESTS = import.meta.glob<unknown>("./builtin/*/manifest.json", { eager: true, import: "default" });
+const SHEETS = import.meta.glob<string>("./builtin/*/sheet.png", { eager: true, import: "default" });
+const FIRST = ["volcano", "space"];
+const folder = (path: string) => path.split("/")[2];
+const order = (path: string) => (FIRST.includes(folder(path)) ? FIRST.indexOf(folder(path)) : FIRST.length);
+
 const BUILT_IN: SkinChoice[] = [
   { id: MINIMAL_ID, name: "Minimal" },
-  builtIn(volcanoManifest, volcanoSheet),
-  builtIn(spaceManifest, spaceSheet),
+  ...Object.keys(MANIFESTS)
+    .sort((a, b) => order(a) - order(b) || a.localeCompare(b))
+    .map((path) => builtIn(MANIFESTS[path], SHEETS[path.replace("manifest.json", "sheet.png")])),
 ];
 
 /** Every usable skin, plus a note for each user skin that was rejected. */

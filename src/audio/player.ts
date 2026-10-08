@@ -6,11 +6,13 @@
 import { api } from "../api";
 import { onWindowHidden } from "../lib/hidden";
 import { normalizeSound, MY_MUSIC, stations, type SoundSettings, type Station } from "../lib/sound";
-import { renderSong, SONGS, type Song } from "./music";
+import { renderSong, SONGS, songsOn, type Song } from "./music";
 import { renderSfx, type SfxName } from "./sfx";
 
 /** Built-in sounds are rendered at this rate; plenty for chiptune. */
 const RATE = 22050;
+/** Times each song plays through before a multi-song station moves on. */
+const SONG_PLAYS = 2;
 
 export interface NowPlaying {
   station: Station;
@@ -35,6 +37,10 @@ class Player {
   private el: HTMLAudioElement | null = null;
   private elUrl = "";
   private trackIndex = 0;
+  /** Position in a built-in station's playlist. */
+  private songIndex = 0;
+  /** A skin's theme playing instead of the station (File by File). */
+  private theme: Song | null = null;
   private errorsInARow = 0;
   private live = new Set<AudioBufferSourceNode>();
   private hidden = document.hidden;
@@ -74,15 +80,37 @@ class Player {
 
   /** The song or track on the current station, playing or not. */
   get title(): string {
-    if (this.station.id !== MY_MUSIC) return (SONGS.find((s) => s.station === this.station.name) ?? SONGS[0]).title;
+    if (this.station.id !== MY_MUSIC || this.theme) return this.currentSong().title;
     if (this.allFailed) return "No playable tracks";
     const name = this.my.tracks[this.trackIndex];
     return name ? name.replace(/\.[^.]+$/, "") : "No tracks yet";
   }
 
-  /** 1-based position on My Music. */
+  /** 1-based position on the station. */
   get trackNumber(): number {
-    return this.trackIndex + 1;
+    return this.station.id === MY_MUSIC ? this.trackIndex + 1 : this.songIndex + 1;
+  }
+
+  /** How many songs or tracks the station has. */
+  get trackCount(): number {
+    return this.station.id === MY_MUSIC ? this.my.tracks.length : songsOn(this.station.name).length;
+  }
+
+  /** Play a skin's theme song (by id) instead of a built-in station while it's set; null goes back. */
+  setTheme(songId: string | null) {
+    const song = (songId && SONGS.find((s) => s.id === songId)) || null;
+    if (song === this.theme) return;
+    this.theme = song;
+    this.stopMusic();
+    this.loopOffset = 0;
+    this.emit();
+    this.sync();
+  }
+
+  private currentSong(): Song {
+    if (this.theme && this.station.id !== MY_MUSIC) return this.theme;
+    const list = songsOn(this.station.name);
+    return list[this.songIndex % Math.max(1, list.length)] ?? SONGS[0];
   }
 
   get stations(): Station[] {
@@ -107,17 +135,25 @@ class Player {
       this.stopMusic();
       this.loopOffset = 0;
       this.trackIndex = 0;
+      this.songIndex = 0;
       this.errorsInARow = 0;
       this.allFailed = false;
     }
     this.sync();
   }
 
-  /** Skip to the next track on My Music. */
+  /** Skip to the next song on the station (or track on My Music). */
   nextTrack() {
-    if (this.station.id !== MY_MUSIC || !this.my.tracks.length) return;
-    this.trackIndex = (this.trackIndex + 1) % this.my.tracks.length;
+    if (this.station.id === MY_MUSIC) {
+      if (!this.my.tracks.length) return;
+      this.trackIndex = (this.trackIndex + 1) % this.my.tracks.length;
+    } else {
+      if (this.theme) return;
+      this.songIndex = (this.songIndex + 1) % Math.max(1, songsOn(this.station.name).length);
+      this.loopOffset = 0;
+    }
     this.stopMusic();
+    this.emit();
     this.sync();
   }
 
@@ -225,7 +261,7 @@ class Player {
     if (!ctx) return;
     const st = this.station;
     if (st.id === MY_MUSIC) return void this.startTrack(ctx);
-    const song = SONGS.find((s) => s.station === st.name) ?? SONGS[0];
+    const song = this.currentSong();
     if (this.loopSrc && this.loopSong === song) return;
     this.stopMusic();
     let buf = this.songs.get(song.id);
@@ -241,6 +277,18 @@ class Player {
     src.connect(this.musicGain!);
     const offset = this.loopSong === song ? this.loopOffset % buf.duration : 0;
     src.start(0, offset);
+    // A station with several songs plays each twice through, then the next.
+    if (!this.theme && songsOn(st.name).length > 1) {
+      src.stop(ctx.currentTime + SONG_PLAYS * buf.duration - offset);
+      src.onended = () => {
+        if (this.loopSrc !== src) return; // paused or switched, not finished
+        this.loopSrc = null;
+        this.songIndex = (this.songIndex + 1) % songsOn(st.name).length;
+        this.loopOffset = 0;
+        this.emit();
+        this.sync();
+      };
+    }
     this.loopSrc = src;
     this.loopSong = song;
     this.loopStarted = ctx.currentTime - offset;

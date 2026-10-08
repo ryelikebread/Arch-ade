@@ -1,15 +1,19 @@
 // Builds the built-in skins' sprite sheets and manifests:
-//   node scripts/build-skins.mjs
-// Writes src/skins/builtin/<id>/{sheet.png,manifest.json}. Commit the output.
-import { mkdirSync, writeFileSync } from "node:fs";
+//   node scripts/build-skins.mjs            (all of them)
+//   node scripts/build-skins.mjs royal      (just one)
+// Every scripts/skins/<id>.mjs except lib.mjs is a skin. Writes
+// src/skins/builtin/<id>/{sheet.png,manifest.json}. Commit the output.
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { pack, png } from "./skins/lib.mjs";
-import * as space from "./skins/space.mjs";
-import * as volcano from "./skins/volcano.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-for (const skin of [volcano, space]) {
+const dir = join(root, "scripts/skins");
+const only = process.argv[2];
+for (const f of readdirSync(dir).sort()) {
+  if (!f.endsWith(".mjs") || f === "lib.mjs" || (only && f !== `${only}.mjs`)) continue;
+  const skin = await import(pathToFileURL(join(dir, f)).href);
   const { sheet, rects } = pack(skin.sprites);
   const out = join(root, "src/skins/builtin", skin.manifest.id);
   mkdirSync(out, { recursive: true });
