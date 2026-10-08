@@ -100,6 +100,16 @@ export class Stage {
     this.wake();
   }
 
+  /** Draw one moment of an animation (0..1) and stop: for previews and tests. */
+  still(anim: Animation, p: number, kind: Kind, captions: Captions) {
+    this.stop();
+    const now = performance.now();
+    this.icon(kind);
+    this.playing = { anim, started: now - p * anim.duration, kind, captions };
+    this.draw(now);
+    this.playing = null;
+  }
+
   get busy(): boolean {
     return this.playing !== null;
   }
