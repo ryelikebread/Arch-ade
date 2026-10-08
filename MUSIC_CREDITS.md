@@ -29,7 +29,14 @@ sampled, downloaded or adapted from other music.
 | Study Hall | Margin Notes | Notes in `src/audio/songs/radio-study-hall.ts`, synthesized at runtime | CC0 1.0 |
 | Study Hall | Rainy Window | Notes in `src/audio/songs/radio-study-hall.ts`, synthesized at runtime | CC0 1.0 |
 | Study Hall | Snooze Button | Notes in `src/audio/songs/radio-study-hall.ts`, synthesized at runtime | CC0 1.0 |
-| (skins, arcade) | Sound effects: blip, pop, chime, whoosh, sizzle, rumble, tom, tomHi, horn, splash, launch, explosion, beam, jingle, shoot, hit, hurt, jump, coin, powerup, bounce, gameover, win | Synth recipes in `src/audio/sfx.ts` | CC0 1.0 |
+| Pigeon Court Radio | Order in the Coop | Notes in `src/audio/songs/pigeon-court.ts`, synthesized at runtime | CC0 1.0 |
+| Pigeon Court Radio | Recess Crumbs | Notes in `src/audio/songs/pigeon-court.ts`, synthesized at runtime | CC0 1.0 |
+| Kitchen Radio | Simmer Down | Notes in `src/audio/songs/peasoup.ts`, synthesized at runtime | CC0 1.0 |
+| Kitchen Radio | Sunday Stew | Notes in `src/audio/songs/peasoup.ts`, synthesized at runtime | CC0 1.0 |
+| Castle Radio | Audience with the King | Notes in `src/audio/songs/royal-court.ts`, synthesized at runtime | CC0 1.0 |
+| Castle Radio | The Jester's Jig | Notes in `src/audio/songs/royal-court.ts`, synthesized at runtime | CC0 1.0 |
+| (skins, arcade) | Sound effects: blip, pop, chime, whoosh, sizzle, rumble, tom, tomHi, horn, splash, launch, explosion, beam, jingle, rewind, shoot, hit, hurt, jump, coin, powerup, bounce, gameover, win | Synth recipes in `src/audio/sfx.ts` | CC0 1.0 |
+| (skins) | Pigeon Court, Peasoup and Royal Court effects (court*, soup*, royal*) | Synth recipes in `src/audio/effects/` | CC0 1.0 |
 
 The chord progressions are common ones (for example Am, F, C, G); the melodies, bass
 lines and drum patterns are written for these tracks. Station moods: Night Drive is
