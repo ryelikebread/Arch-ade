@@ -17,8 +17,15 @@ export function onWindowHidden(cb: (hidden: boolean) => void): () => void {
   document.addEventListener("visibilitychange", onVis);
   cleanup.push(() => document.removeEventListener("visibilitychange", onVis));
   let gone = false;
-  getCurrentWindow()
-    .onResized(async () => report(document.hidden || (await getCurrentWindow().isMinimized())))
+  let win: ReturnType<typeof getCurrentWindow>;
+  try {
+    win = getCurrentWindow();
+  } catch {
+    // Not inside the app (a dev preview page): visibilitychange is enough.
+    return () => cleanup.forEach((f) => f());
+  }
+  win
+    .onResized(async () => report(document.hidden || (await win.isMinimized())))
     .then((un) => (gone ? un() : cleanup.push(un)))
     .catch(() => {});
   return () => {

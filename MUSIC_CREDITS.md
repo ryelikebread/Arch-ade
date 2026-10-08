@@ -6,13 +6,35 @@ sampled, downloaded or adapted from other music.
 | Station | Track | How it's made | License |
 | --- | --- | --- | --- |
 | Arch-ade FM | Tidy Up Tonight | Notes in `src/audio/music.ts`, synthesized at runtime | CC0 1.0 |
+| Arch-ade FM | Folder by Folder | Notes in `src/audio/songs/radio-arch-ade-fm.ts`, synthesized at runtime | CC0 1.0 |
+| Arch-ade FM | Rename Everything | Notes in `src/audio/songs/radio-arch-ade-fm.ts`, synthesized at runtime | CC0 1.0 |
 | Island Radio | Lagoon Shuffle | Notes in `src/audio/music.ts`, synthesized at runtime | CC0 1.0 |
+| Island Radio | Coconut Cache | Notes in `src/audio/songs/radio-island-radio.ts`, synthesized at runtime | CC0 1.0 |
+| Island Radio | Hammock Hour | Notes in `src/audio/songs/radio-island-radio.ts`, synthesized at runtime | CC0 1.0 |
 | Orbit FM | Low Orbit | Notes in `src/audio/music.ts`, synthesized at runtime | CC0 1.0 |
+| Orbit FM | Satellite Lullaby | Notes in `src/audio/songs/radio-orbit-fm.ts`, synthesized at runtime | CC0 1.0 |
+| Orbit FM | Zero-G Inbox | Notes in `src/audio/songs/radio-orbit-fm.ts`, synthesized at runtime | CC0 1.0 |
 | Boss Rush | Final Sort | Notes in `src/audio/music.ts`, synthesized at runtime | CC0 1.0 |
+| Boss Rush | Disk Full | Notes in `src/audio/songs/radio-boss-rush.ts`, synthesized at runtime | CC0 1.0 |
+| Boss Rush | Corrupted Archive | Notes in `src/audio/songs/radio-boss-rush.ts`, synthesized at runtime | CC0 1.0 |
+| Night Drive | Neon Overpass | Notes in `src/audio/songs/radio-night-drive.ts`, synthesized at runtime | CC0 1.0 |
+| Night Drive | Tail Lights | Notes in `src/audio/songs/radio-night-drive.ts`, synthesized at runtime | CC0 1.0 |
+| Night Drive | Midnight Refresh | Notes in `src/audio/songs/radio-night-drive.ts`, synthesized at runtime | CC0 1.0 |
+| Lobby Lounge | Please Hold | Notes in `src/audio/songs/radio-lobby-lounge.ts`, synthesized at runtime | CC0 1.0 |
+| Lobby Lounge | Elevator to Floor Nine | Notes in `src/audio/songs/radio-lobby-lounge.ts`, synthesized at runtime | CC0 1.0 |
+| Lobby Lounge | Velvet Spreadsheet | Notes in `src/audio/songs/radio-lobby-lounge.ts`, synthesized at runtime | CC0 1.0 |
+| Quest FM | Over the Next Hill | Notes in `src/audio/songs/radio-quest-fm.ts`, synthesized at runtime | CC0 1.0 |
+| Quest FM | Village Market | Notes in `src/audio/songs/radio-quest-fm.ts`, synthesized at runtime | CC0 1.0 |
+| Quest FM | Lantern Cave | Notes in `src/audio/songs/radio-quest-fm.ts`, synthesized at runtime | CC0 1.0 |
+| Study Hall | Margin Notes | Notes in `src/audio/songs/radio-study-hall.ts`, synthesized at runtime | CC0 1.0 |
+| Study Hall | Rainy Window | Notes in `src/audio/songs/radio-study-hall.ts`, synthesized at runtime | CC0 1.0 |
+| Study Hall | Snooze Button | Notes in `src/audio/songs/radio-study-hall.ts`, synthesized at runtime | CC0 1.0 |
 | (skins, arcade) | Sound effects: blip, pop, chime, whoosh, sizzle, rumble, tom, tomHi, horn, splash, launch, explosion, beam, jingle, shoot, hit, hurt, jump, coin, powerup, bounce, gameover, win | Synth recipes in `src/audio/sfx.ts` | CC0 1.0 |
 
 The chord progressions are common ones (for example Am, F, C, G); the melodies, bass
-lines and drum patterns are written for these tracks.
+lines and drum patterns are written for these tracks. Station moods: Night Drive is
+synthwave, Lobby Lounge swinging elevator jazz, Quest FM cheerful 8-bit overworld music,
+Study Hall lo-fi beats.
 
 To the extent possible under law, the authors have waived all copyright and related
 rights to these tracks and effects under CC0 1.0 Universal

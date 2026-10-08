@@ -8,6 +8,7 @@
 //! history but can't be undone or redone, and undo moves past it to the plan
 //! before.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{params, OptionalExtension};
@@ -15,7 +16,7 @@ use serde::Serialize;
 
 use crate::db::Db;
 use crate::names;
-use crate::plan::{Fingerprint, Op, Plan, PlannedOp};
+use crate::plan::{Fingerprint, Issue, Op, Plan, PlannedOp};
 use crate::platform::{Platform, TrashReceipt};
 use crate::scope::Scope;
 use crate::{Error, Result};
@@ -237,6 +238,62 @@ impl<'a> Journal<'a> {
             .execute("UPDATE plans SET status = 'redoing', applied_at = ?2 WHERE id = ?1", params![id, now_ms()])?;
         let steps = plan.ops.iter().map(|o| forward_step(o, true)).collect();
         self.run(id, &plan.label, "redo", steps, None).map(Some)
+    }
+
+    /// A copy of a plan that was reviewed but never applied (it "expired" when
+    /// the app restarted), checked again against the files as they are now.
+    /// Anything that changed, moved away or would overwrite becomes a blocking
+    /// issue, so the copy only goes through review if it's still safe.
+    pub fn revive(&self, id: i64) -> Result<Plan> {
+        let (old, status) = self.load(id)?;
+        if status != "expired" && status != "planned" {
+            return Err(Error::Plan(format!("plan {id} is {status}: only plans that never ran can be reviewed again")));
+        }
+        let mut plan = Plan { label: old.label.clone(), ops: old.ops.clone(), issues: vec![] };
+        // Earlier ops in the same plan create or free paths for later ones
+        // (a folder made first, a rename through a temporary name).
+        let mut made: HashSet<PathBuf> = HashSet::new();
+        let mut freed: HashSet<PathBuf> = HashSet::new();
+        let mut problems: Vec<(PathBuf, String)> = vec![];
+        for o in &old.ops {
+            let (src, dst) = match &o.op {
+                Op::Mkdir { path } => (None, Some(path)),
+                Op::Move { from, to } | Op::Copy { from, to } | Op::Archive { from, to } => (Some(from), Some(to)),
+                Op::Trash { path } | Op::Tag { path, .. } => (Some(path), None),
+                Op::Delete { path } => {
+                    problems.push((path.clone(), "permanent deletes aren't reviewed again; use File by File".into()));
+                    continue;
+                }
+            };
+            for p in src.iter().chain(dst.iter()) {
+                if self.scope.check(p).is_err() {
+                    problems.push(((*p).clone(), "is outside the folders Arch-ade may change now".into()));
+                }
+            }
+            if let Some(src) = src {
+                if !made.contains(src) {
+                    if std::fs::symlink_metadata(src).is_err() {
+                        problems.push((src.clone(), "is gone".into()));
+                    } else if o.expect.is_some() && Fingerprint::of(src) != o.expect {
+                        problems.push((src.clone(), "changed since this plan was made".into()));
+                    }
+                }
+            }
+            if let Some(dst) = dst {
+                let mkdir = matches!(o.op, Op::Mkdir { .. });
+                if !mkdir && !freed.contains(dst) && std::fs::symlink_metadata(dst).is_ok() {
+                    problems.push((dst.clone(), "already exists".into()));
+                }
+                made.insert(dst.clone());
+            }
+            if let (Some(src), Op::Move { .. } | Op::Trash { .. }) = (src, &o.op) {
+                freed.insert(src.clone());
+            }
+        }
+        for (path, msg) in problems {
+            plan.issues.push(Issue { path, message: msg, blocking: true });
+        }
+        Ok(plan)
     }
 
     pub fn history(&self, limit: usize) -> Result<Vec<PlanSummary>> {

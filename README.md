@@ -20,9 +20,13 @@ display skins). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
   to apply while it's on.
 - Every applied step is written to an **operation journal** (SQLite) before and after it
   touches disk, so **Undo/Redo** work across restarts, and a crash mid-plan is detected
-  and reported on next launch.
-- **Trash** means the OS trash (Finder Trash, Recycle Bin, freedesktop Trash). There is no
-  permanent delete yet.
+  and reported on next launch. **History** lists every plan. Plans that were reviewed but
+  never applied are hidden unless you tick **Show plans that were reviewed but never
+  applied**; **Review again** re-checks one
+  against the files as they are now and opens it for review. **Undo back to here** undoes
+  every later plan and then that one.
+- **Trash** means the OS trash (Finder Trash, Recycle Bin, freedesktop Trash). The only
+  permanent delete is the confirmed one in File by File.
 - **Project folders** (Git, Node, Rust, Python, Go, Java, .NET, Xcode, CMake, Unity, Unreal,
   Godot, Blender, ...) are kept whole: recursive scans list the folder but not its contents,
   and no plan moves, renames or trashes anything inside one.
@@ -168,13 +172,16 @@ one at a time, with the preview, and you decide each with a key:
 | T, Delete or Backspace | Move to the trash |
 | Shift+Delete or Shift+Backspace | Delete permanently, after a confirmation |
 | → or S / ← or B | Skip / Back |
-| Cmd/Ctrl+Z | Undo the latest decision and go back to that file |
+| Cmd/Ctrl+Z | Undo the latest decision and go back to that file (the skin plays it backwards) |
 | Esc | Done |
 
 **Other folder…** in the Move picker lets you choose a folder outside the open one; like a
 rule destination, it's then remembered as allowed. Each decision is its own small plan in
 the journal, applied straight away, so Undo here (or
-in the main window) walks back one file at a time. With dry run on, decisions are only shown.
+in the main window) walks back one file at a time. With dry run on, decisions are only shown;
+when you reach the end of the batch, **Do these N decisions for real** applies them (except
+permanent deletes, which you'd redo by hand), and the dry run button turns dry run off for
+the next files. **Reset** next to the quick-pick folders clears the remembered picks.
 **Delete permanently** is the one thing that can't be undone: it skips the trash, asks
 first, only works on single files, and shows in History as "done (can't be undone)". Undo
 moves past it to the decision before.
@@ -182,6 +189,13 @@ moves past it to the decision before.
 **Skins** change only how a decision looks; the keys are the same. *Minimal* (the default)
 draws nothing and costs nothing. *Volcano* and *Space* animate each decision on a small
 pixel canvas (capped at 30fps, and nothing runs while the window is hidden or minimized).
+*Pigeon Court* puts each file on trial before Judge Reginald Coo and a pigeon jury (keep is
+innocent, move is guilty, rename is a mistrial, trash is contempt and the bailiff hen takes
+it away). *Peasoup* cooks: keep goes into the soup, which thickens as you go; move goes to
+the pantry, rename gets a new label, and trash feeds the dog. *Royal Court* brings each file
+before the king: keep wins his favor, move is exile through the castle gate, rename is a
+decree from the town crier, and trash is either a walk to the dungeon or the trap door. These
+three each have their own theme music and sound effects.
 Skins are a sprite sheet plus a JSON manifest, so you can make your own: put them in
 `<app data>/skins/<name>/` (see [docs/SKINS.md](docs/SKINS.md)). The built-in sheets are
 original art drawn in code: `npm run build-skins` regenerates them from `scripts/skins/`.
@@ -193,11 +207,15 @@ Skins can also name sound effects for each decision (see [Sound](#sound)).
 arcade-style options screen. Use ↑ ↓ to pick a row, ← → to change it, Enter to toggle,
 Esc to leave. Music starts paused; everything is remembered.
 
-- **Station**: four built-in stations, each an original chiptune loop made for Arch-ade
-  (Arch-ade FM, Island Radio, Orbit FM, Boss Rush), plus **My Music**.
+- **Station**: thirteen built-in stations of original chiptune made for Arch-ade (Arch-ade
+  FM, Island Radio, Orbit FM, Boss Rush, Lobby Lounge, Night Drive, Quest FM, Study Hall,
+  plus Pigeon Court Radio, Kitchen Radio and Castle Radio from the skins), plus **My Music**.
+  Each song plays twice, then the station moves on; **Now playing** skips ahead. While
+  Pigeon Court, Peasoup or Royal Court is on in File by File, its theme plays instead of a
+  built-in station.
 - **Music**: play or pause. **Music volume** and **Music mute** are separate from pause.
-- **Sound FX** and **FX volume**: the Volcano and Space skins play effects with their
-  animations (a volcano rumble, a rocket launch, a boat horn). Minimal stays silent.
+- **Sound FX** and **FX volume**: every skin but Minimal plays effects with its
+  animations (a volcano rumble, a gavel, a bubbling pot, a fanfare). Minimal stays silent.
   **Sound test** plays any effect.
 - **My Music**: put your own .mp3, .m4a, .aac, .ogg, .opus, .wav or .flac files (up to
   50 MB each) in `<app data>/music/` (**My music folder > Show** opens it). They play in
@@ -255,6 +273,11 @@ Arch-ade never checks the network. To try the update flow, put
 `required: false` shows a button in the status bar; `required: true` shows a dialog that
 can only be answered with "Get the update" or "Quit". Only `https` links are offered. A real
 update source can replace `ManifestFile` behind the `UpdateSource` trait later.
+
+## Full-screen preview
+
+**Space** (or **Full screen** on the preview) shows the selected file's preview over the
+whole window; ↑ ↓ still change files, and Space or Esc goes back.
 
 ## Themes
 

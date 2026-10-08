@@ -63,7 +63,7 @@ const header = h(
   h("label", {}, hiddenCb, "Hidden"),
   undoBtn,
   redoBtn,
-  h("button", { onclick: () => historyDialog() }, "History"),
+  h("button", { onclick: () => openHistory() }, "History"),
   h("button", { onclick: () => openRules() }, "Rules"),
   dryBtn,
   h("button", { onclick: () => soundMenu(), title: "Music and sound effects" }, "Sound"),
@@ -103,7 +103,7 @@ const toolbar = h(
   h("div", { class: "actions" }, selInfo, renameBtn, moveBtn, trashBtn, fbfBtn, sortBtn, dupesBtn),
 );
 
-const preview = new PreviewPane();
+const preview = new PreviewPane({ fullScreen: true });
 const table = new FileTable({
   onSort: (k) => {
     if (state.sortKey === k) state.asc = !state.asc;
@@ -379,6 +379,7 @@ function doFileByFile() {
     root: state.root,
     isMac: state.isMac,
     dryRun: state.dryRun,
+    onDryRun: (on) => on !== state.dryRun && toggleDryRun(),
     onChanged: () => {
       refreshJournal();
       rescan();
@@ -394,6 +395,10 @@ function openRules() {
 
 function doDupes() {
   dupesDialog(state.view, (paths) => doTrash(paths));
+}
+
+function openHistory() {
+  historyDialog({ onReview: review, onRun: afterRun }).catch((e) => say(String(e), true));
 }
 
 async function undo() {
@@ -459,7 +464,7 @@ document.addEventListener("keydown", (ev) => {
     case "move": return void doMove();
     case "duplicates": return doDupes();
     case "search": return search.focus();
-    case "history": return void historyDialog();
+    case "history": return void openHistory();
     case "rules": return openRules();
     case "categorize": return doCategorize();
     case "fileByFile": return doFileByFile();
@@ -468,7 +473,9 @@ document.addEventListener("keydown", (ev) => {
     case "help": return helpDialog(state.isMac);
     case "up": return table.move(-1, ev.shiftKey);
     case "down": return table.move(1, ev.shiftKey);
+    case "fullPreview": return preview.toggleFull();
     case "escape":
+      if (preview.full) return preview.toggleFull(false);
       if (typing) (ev.target as HTMLElement).blur();
       table.focus();
       return;

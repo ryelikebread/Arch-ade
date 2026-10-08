@@ -2,7 +2,7 @@
 
 export type Action =
   | "open" | "undo" | "redo" | "selectAll" | "rename" | "trash" | "move" | "duplicates" | "search"
-  | "help" | "history" | "up" | "down" | "toggleDryRun" | "escape" | "rules" | "categorize" | "fileByFile" | "sound";
+  | "help" | "history" | "up" | "down" | "toggleDryRun" | "escape" | "rules" | "categorize" | "fileByFile" | "sound" | "fullPreview";
 
 export interface KeyLike {
   key: string;
@@ -39,6 +39,7 @@ export const BINDINGS: Binding[] = [
   { action: "categorize", key: "k", mod: true, shift: true },
   { action: "fileByFile", key: "f", mod: true, shift: true },
   { action: "sound", key: "s", mod: true, shift: true },
+  { action: "fullPreview", key: " ", label: "Space" },
   { action: "help", key: "F1" },
   { action: "help", key: "?", shift: true },
   { action: "up", key: "ArrowUp" },
@@ -68,6 +69,6 @@ export function label(action: Action, isMac: boolean): string {
   const parts: string[] = [];
   if (b.mod) parts.push(isMac ? "Cmd" : "Ctrl");
   if (b.shift && b.key !== "?") parts.push("Shift");
-  parts.push(b.key.length === 1 ? b.key.toUpperCase() : b.key);
+  parts.push(b.label ?? (b.key.length === 1 ? b.key.toUpperCase() : b.key));
   return parts.join("+");
 }

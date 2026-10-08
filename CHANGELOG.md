@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-08
+
+- Phase 4: three new File by File skins, Pigeon Court, Peasoup and Royal Court, each with its own theme song and sound effects; Royal Court's trash randomly goes to the dungeon or the trap door, and Peasoup's soup and dog change as you go. Why: Rye asked for these skins.
+- Phase 4: skin manifests gain `variants` (random alternative animations), per-animation `sounds`, `music` and scene props with `tally`; songs, effects and built-in skins are found by folder. Why: needed by the new skins and makes adding more a one-folder job.
+- Phase 4: radio has 13 stations with several songs each (each plays twice, then the next). Why: Rye asked for more channels and songs.
+- Phase 4: Undo in File by File plays the decision's animation backwards. Why: Rye asked for a rewind animation.
+- Phase 4: File by File's dry-run button and "Do these N decisions for real" at the end of a dry-run batch, plus Reset for quick-move folders. Why: Rye asked to switch dry run off after a batch and to reset quick moves.
+- History labels "expired" plans as "never applied", hides them by default, and adds Review again and Undo back to here. Full-screen preview (Space) on the main screen. Why: Rye found expired plans confusing and asked for a full-screen preview.
+
 ## 2026-10-07
 
 - Phase 5: Arcade mode (off by default; Settings > Arcade mode: offer or auto-start, chosen or random game). After File by File or an applied plan, trashed/deleted files become foes (size sets toughness, type sets a trick) and kept/moved/renamed files become pickups and allies. Why: the spec's post-session mini-games, costing nothing when off.
