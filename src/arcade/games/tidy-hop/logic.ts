@@ -8,7 +8,7 @@ import type { SfxName } from "../../../audio/sfx";
 import type { Kind } from "../../../types";
 import { filler } from "../../round";
 import type { Ability, Cast, Foe, Friend, GameResult, Input } from "../../types";
-import { BASE, buildLevel, LADDER, oneWay, ROWS, solid, standable, T, tileAt, VIEW_W, type Level } from "./level";
+import { BASE, buildLevel, LADDER, oneWay, ROWS, sectionAt, solid, standable, T, tileAt, VIEW_W, type Level, type ThemeId } from "./level";
 
 export const READY_TICKS = 45;
 export const MIN_FOES = 10;
@@ -26,6 +26,24 @@ export const FLASH_CYCLE = 150;
 export const GOAL_TICKS = 50;
 export const GOAL_PER_FOE = 100;
 export const OVER_TICKS = 30;
+/** How long a level's title shows when you walk into it. */
+export const TITLE_TICKS = 75;
+export const POPUP_TICKS = 40;
+export const MAX_POPUPS = 4;
+/** How far the magnet reaches, in pixels. */
+export const MAGNET_R = 72;
+
+/** Power-ups that aren't files: they wait in some coin blocks, float once per level, and elites drop them. */
+export const POWERS = ["wings", "star", "magnet", "zoom"] as const;
+export type PowerId = (typeof POWERS)[number];
+/** How long each lasts, in ticks. */
+export const POWER_TICKS: Record<PowerId, number> = { wings: 600, star: 240, magnet: 540, zoom: 420 };
+/** Said over your head when you pick it up. */
+export const POWER_LABEL: Record<PowerId, string> = { wings: "DOUBLE JUMP", star: "STAR", magnet: "MAGNET", zoom: "SPEED UP" };
+/** Said when a kept file's perk is picked up. */
+export const PERK_LABEL: Record<string, string> = {
+  health: "HEARTS", armor: "HELMET", ally: "HELPER", rapid: "RAPID THROW", spread: "TRIPLE THROW", ammo: "PAPER BALLS", power: "BIG", points: "BONUS",
+};
 
 // Player physics, in pixels per tick.
 const G = 0.42;
@@ -35,6 +53,11 @@ export const JUMP_V = 5.2;
 const MAX_FALL = 6;
 const RUN = 2;
 const ACC = 0.3;
+/** Running with the speed boost. */
+export const RUN_FAST = 3;
+const ACC_FAST = 0.45;
+/** The double jump: a little less than a ground jump. */
+const AIR_JUMP_V = 4.6;
 const FRICTION = 0.35;
 const CLIMB = 1.5;
 const COYOTE = 5;
@@ -79,9 +102,13 @@ export interface Player extends Body {
   respawnX: number;
   /** Ticks moving, for the run cycle. */
   anim: number;
+  /** Ticks left of each power-up (0 when off). */
+  pw: Record<PowerId, number>;
+  /** Double jumps left before landing. */
+  airJumps: number;
 }
 
-export type How = "stomp" | "shot" | "squash" | "ally" | "bump" | "fall";
+export type How = "stomp" | "shot" | "squash" | "ally" | "bump" | "fall" | "star";
 
 export interface Enemy extends Body {
   foe: Foe | null;
@@ -132,14 +159,17 @@ export interface Slab {
 export interface Block {
   c: number;
   r: number;
-  /** Index into friends, or -1 for a coin block. */
+  /** Index into friends, or -1 for a coin or power-up block. */
   friend: number;
+  power: PowerId | null;
   used: boolean;
   bump: number;
 }
 
 export interface Pickup {
+  /** Index into friends, or -1 for a power-up. */
   friend: number;
+  power: PowerId | null;
   x: number;
   y: number;
   /** float: waits in the air; pop: rises out of a block, then flies to you. */
@@ -187,8 +217,26 @@ export interface Ally extends Body {
   facing: 1 | -1;
 }
 
+/** Words over the player's head for a moment (what was just picked up). */
+export interface Popup {
+  text: string;
+  color: number;
+  x: number;
+  y: number;
+  t: number;
+}
+
+/** A level: one section of the strip, titled after one of the round's folders. */
+export interface Stage {
+  x: number;
+  title: string;
+  theme: ThemeId;
+}
+
 export interface Env {
   cast: Cast;
+  /** Folder names for level titles (the game context always has some). */
+  folders?: readonly string[];
   rng(): number;
   sfx(name: SfxName): void;
   end(r: GameResult): void;
@@ -209,6 +257,11 @@ export interface World {
   parts: Particle[];
   partAt: number;
   ally: Ally;
+  popups: Popup[];
+  stages: Stage[];
+  /** The level you're in, and the tick you walked into it (its title shows for a while). */
+  stage: number;
+  stageT: number;
   checkpoints: { x: number; on: boolean }[];
   goalX: number;
   cam: number;
@@ -239,14 +292,22 @@ export const SIZE = { normal: { w: 14, h: 17 }, tank: { w: 22, h: 23 }, mini: { 
 
 // ---------- building ----------
 
-export function createWorld(env: Env): World {
+/** A folder name as a level title: upper case, short enough for the banner. */
+export function folderTitle(name: string): string {
+  const s = name.toUpperCase().replace(/[^A-Z0-9 ._-]+/g, " ").replace(/\s+/g, " ").trim() || "FILES";
+  return s.length > 14 ? s.slice(0, 13) + "." : s;
+}
+
+/** `themes` forces the levels' themes, for tests. */
+export function createWorld(env: Env, themes?: readonly ThemeId[]): World {
   const rng = env.rng;
   const foes = [...env.cast.foes];
   if (foes.length < MIN_FOES) foes.push(...filler(MIN_FOES - foes.length, rng));
   const friends = env.cast.friends;
   const inBlocks = friends.map((_, i) => i).filter((i) => friends[i].perk !== "points");
   const floating = friends.map((_, i) => i).filter((i) => friends[i].perk === "points");
-  const level = buildLevel(foes.length, inBlocks.length, rng);
+  const level = buildLevel(foes.length, inBlocks.length, rng, themes);
+  const folders = env.folders?.length ? env.folders : ["Files"];
 
   const w: World = {
     level, foes, friends,
@@ -255,6 +316,9 @@ export function createWorld(env: Env): World {
     parts: Array.from({ length: MAX_PARTS }, () => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0, color: 0 })),
     partAt: 0,
     ally: { on: false, t: 0, dmg: 1, cd: 0, friend: -1, facing: 1, x: 0, y: 0, w: 8, h: 16, vx: 0, vy: 0, onGround: false },
+    popups: [],
+    stages: level.sections.map((s, i) => ({ x: s.col * T, title: folderTitle(folders[i % folders.length]), theme: s.theme })),
+    stage: 0, stageT: 0,
     checkpoints: level.checkpoints.map((x) => ({ x, on: false })),
     goalX: level.goalCol * T,
     cam: 0, shake: 0, tick: 0, phase: "ready", phaseT: 0,
@@ -263,7 +327,7 @@ export function createWorld(env: Env): World {
   };
 
   // Blocks: friends spread evenly through them, the rest give a coin.
-  w.blocks = level.blocks.map(({ c, r }) => ({ c, r, friend: -1, used: false, bump: 0 }));
+  w.blocks = level.blocks.map(({ c, r }) => ({ c, r, friend: -1, power: null, used: false, bump: 0 }));
   inBlocks.forEach((fi, j) => {
     const b = w.blocks[Math.floor(((j + 0.5) * w.blocks.length) / inBlocks.length)];
     if (b && b.friend < 0) b.friend = fi;
@@ -273,8 +337,9 @@ export function createWorld(env: Env): World {
   const air = level.airSlots;
   floating.forEach((fi, j) => {
     const a = floating.length <= air.length ? air[Math.floor(((j + 0.5) * air.length) / floating.length)] : air[j];
-    w.pickups.push(a ? { friend: fi, x: a.x - 6, y: a.y - 6, mode: "float", t: 0, taken: false } : floatAt(w, fi, j, floating.length));
+    w.pickups.push(a ? { friend: fi, power: null, x: a.x - 6, y: a.y - 6, mode: "float", t: 0, taken: false } : floatAt(w, fi, j, floating.length));
   });
+  placePowers(w);
   w.coins = level.coins.map(({ x, y }) => ({ x, y, taken: false }));
   w.slabs = level.slabs.map(({ c, r, len }) => ({
     x: c * T, y: r * T, len, pressed: new Array<number>(len).fill(0), count: 0, state: "rest" as const, vy: 0, landY: 0, squashed: 0,
@@ -290,7 +355,7 @@ function newPlayer(lv: Level): Player {
     x, y: BASE * T - SMALL.h, w: SMALL.w, h: SMALL.h, vx: 0, vy: 0, onGround: true,
     facing: 1, climbing: false, hearts: 3, maxHearts: 3, lives: 3, armor: 0, big: false, stompDmg: 1,
     shots: START_SHOTS, rapidT: 0, spreadT: 0, inv: 0, stun: 0, throwCd: 0, holdT: 0, coyote: 0, dead: 0, onSlab: -1,
-    prevBottom: BASE * T, respawnX: x, anim: 0,
+    prevBottom: BASE * T, respawnX: x, anim: 0, pw: { wings: 0, star: 0, magnet: 0, zoom: 0 }, airJumps: 0,
   };
 }
 
@@ -300,7 +365,37 @@ function floatAt(w: World, fi: number, j: number, n: number): Pickup {
   let c = Math.floor(20 + ((j + 0.5) * (lv.cols - 50)) / Math.max(1, n));
   while (c < lv.cols - 1 && lv.ground[c] < 0) c++;
   const gy = (lv.ground[c] < 0 ? BASE : lv.ground[c]) * T;
-  return { friend: fi, x: c * T + 1, y: gy - 40, mode: "float", t: 0, taken: false };
+  return { friend: fi, power: null, x: c * T + 1, y: gy - 40, mode: "float", t: 0, taken: false };
+}
+
+/**
+ * Power-ups: one floats in each level (at a free air spot), and about a third
+ * of the blocks with no file in them hold one. Dealt from a shuffled deck so
+ * a round sees every kind before any repeats.
+ */
+function placePowers(w: World) {
+  const rng = w.env.rng;
+  let deck: PowerId[] = [];
+  const draw = (): PowerId => {
+    if (!deck.length) {
+      deck = [...POWERS];
+      for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+      }
+    }
+    return deck.pop()!;
+  };
+  const lv = w.level;
+  const taken = (x: number, y: number) => w.pickups.some((k) => Math.abs(k.x + 6 - x) < 24 && Math.abs(k.y + 6 - y) < 24);
+  lv.sections.forEach((sec, i) => {
+    const end = lv.sections[i + 1]?.col ?? lv.cols;
+    // Not the very start: the first level's power-up waits a little way in.
+    const spots = lv.airSlots.filter((a) => a.x >= Math.max(sec.col, 30) * T && a.x < end * T && !taken(a.x, a.y));
+    const a = spots[Math.floor(rng() * spots.length)];
+    if (a) w.pickups.push({ friend: -1, power: draw(), x: a.x - 6, y: a.y - 6, mode: "float", t: 0, taken: false });
+  });
+  for (const b of w.blocks) if (b.friend < 0 && rng() < 0.34) b.power = draw();
 }
 
 /** Easier foes first: sorted by strength along the level, tanks only on the ground. */
@@ -456,6 +551,7 @@ export function step(w: World, input: Input) {
   w.tick++;
   if (w.shake > 0) w.shake--;
   updateParticles(w);
+  updatePopups(w);
   if (w.phase === "ready") {
     if (++w.phaseT >= READY_TICKS) {
       w.phase = "play";
@@ -481,6 +577,28 @@ export function step(w: World, input: Input) {
   updatePickups(w);
   for (const b of w.blocks) if (b.bump > 0) b.bump--;
   w.cam += (camTarget(w) - w.cam) * 0.25;
+  const st = sectionAt(w.level, w.player.x + w.player.w / 2);
+  if (st > w.stage) {
+    w.stage = st;
+    w.stageT = w.tick;
+  }
+}
+
+/** Words over the player's head; the oldest goes when there are too many. */
+export function popup(w: World, text: string, color: number) {
+  const p = w.player;
+  if (w.popups.length >= MAX_POPUPS) w.popups.shift();
+  // Stack under one still rising, so two pickups in a row stay readable.
+  const y = Math.max(p.y - 10, ...w.popups.filter((q) => q.t > POPUP_TICKS - 12).map((q) => q.y + 8));
+  w.popups.push({ text, color, x: p.x + p.w / 2, y, t: POPUP_TICKS });
+}
+
+function updatePopups(w: World) {
+  for (let i = w.popups.length - 1; i >= 0; i--) {
+    const q = w.popups[i];
+    if (--q.t <= 0) w.popups.splice(i, 1);
+    else if (q.t > 10) q.y -= 0.5;
+  }
 }
 
 export function camTarget(w: World): number {
@@ -526,6 +644,7 @@ function updatePlayer(w: World, inp: Input) {
   if (p.throwCd > 0) p.throwCd--;
   if (p.rapidT > 0) p.rapidT--;
   if (p.spreadT > 0) p.spreadT--;
+  for (const k of POWERS) if (p.pw[k] > 0) p.pw[k]--;
   const free = p.stun === 0;
   if (p.stun > 0) p.stun--;
   const dir = free ? (inp.held("right") ? 1 : 0) - (inp.held("left") ? 1 : 0) : 0;
@@ -533,8 +652,9 @@ function updatePlayer(w: World, inp: Input) {
 
   if (p.climbing) climb(w, inp, dir);
   else {
+    const run = p.pw.zoom > 0 ? RUN_FAST : RUN;
     if (dir) {
-      p.vx = Math.max(-RUN, Math.min(RUN, p.vx + dir * ACC));
+      p.vx = Math.max(-run, Math.min(run, p.vx + dir * (p.pw.zoom > 0 ? ACC_FAST : ACC)));
       p.facing = dir as 1 | -1;
       p.anim++;
     } else if (p.onGround || free) p.vx = Math.abs(p.vx) <= FRICTION ? 0 : p.vx - Math.sign(p.vx) * FRICTION;
@@ -549,6 +669,13 @@ function updatePlayer(w: World, inp: Input) {
         p.onGround = false;
         p.coyote = 0;
         sfx(w, "jump");
+      } else if (free && !p.onGround && p.airJumps > 0 && p.pw.wings > 0 && inp.pressed("fire")) {
+        // Wings: one more jump in the air, with a puff under the feet.
+        p.airJumps--;
+        p.vy = -AIR_JUMP_V;
+        p.holdT = HOLD / 2;
+        burst(w, p.x + p.w / 2, p.y + p.h, 6, PART.cyan, 1.2);
+        sfx(w, "jump");
       }
       const g = p.vy < 0 && jumpHeld && p.holdT > 0 ? G_HOLD : G;
       p.holdT = jumpHeld && p.holdT > 0 ? p.holdT - 1 : 0;
@@ -559,6 +686,7 @@ function updatePlayer(w: World, inp: Input) {
       p.onSlab = -1;
       if (!p.onGround && p.vy >= 0) landOnSlab(w);
       if (bumped >= 0) bumpBlock(w, bumped);
+      if (p.onGround) p.airJumps = 1;
       if (p.onGround && !dir) p.anim = 0;
     }
   }
@@ -612,6 +740,7 @@ function startClimb(w: World, up: boolean) {
   const ok = up ? isLadder(lv, c, feet) || isLadder(lv, c, mid) : p.onGround && isLadder(lv, c, below);
   if (!ok) return;
   p.climbing = true;
+  p.airJumps = 1;
   p.x = c * T + T / 2 - p.w / 2;
   p.vx = 0;
   p.vy = 0;
@@ -675,7 +804,7 @@ function throwBalls(w: World) {
 
 export function hurtPlayer(w: World, fromX: number) {
   const p = w.player;
-  if (p.inv > 0 || p.dead > 0 || w.phase !== "play") return;
+  if (p.inv > 0 || p.pw.star > 0 || p.dead > 0 || w.phase !== "play") return;
   if (p.armor > 0) {
     p.armor--;
     sfx(w, "bounce");
@@ -739,6 +868,7 @@ function respawn(w: World) {
   p.climbing = false;
   p.onGround = true;
   p.rapidT = p.spreadT = 0;
+  for (const k of POWERS) p.pw[k] = 0;
   w.cam = camTarget(w);
 }
 
@@ -754,8 +884,8 @@ function bumpBlock(w: World, idx: number) {
   for (const e of w.enemies) if (e.state === "alive" && overlap(e, b.c * T, b.r * T - 4, 16, 4)) hitEnemy(w, e, 1, "bump");
   if (b.used) return sfx(w, "tom");
   b.used = true;
-  if (b.friend >= 0) {
-    w.pickups.push({ friend: b.friend, x: b.c * T + 2, y: b.r * T - 4, mode: "pop", t: 0, taken: false });
+  if (b.friend >= 0 || b.power) {
+    w.pickups.push({ friend: b.friend, power: b.power, x: b.c * T + 2, y: b.r * T - 4, mode: "pop", t: 0, taken: false });
     sfx(w, "blip");
   } else {
     w.score += 10;
@@ -767,7 +897,10 @@ function bumpBlock(w: World, idx: number) {
 function touchThings(w: World) {
   const p = w.player;
   if (p.dead > 0) return;
+  const pcx = p.x + p.w / 2;
+  const pcy = p.y + p.h / 2;
   for (const c of w.coins) {
+    if (!c.taken && p.pw.magnet > 0) pull(c, pcx, pcy, 0, 0, 3.5);
     if (!c.taken && overlap(p, c.x - 3, c.y - 3, 6, 7)) {
       c.taken = true;
       w.score += 10;
@@ -803,11 +936,23 @@ function goalSlide(w: World) {
   if (++w.phaseT >= GOAL_TICKS) finish(w, true);
 }
 
+/** The magnet: drag a thing (offset ox, oy to its middle) toward the player when close. */
+function pull(o: { x: number; y: number }, px: number, py: number, ox: number, oy: number, speed: number) {
+  const dx = px - (o.x + ox);
+  const dy = py - (o.y + oy);
+  const d = Math.hypot(dx, dy);
+  if (d > MAGNET_R || d < 0.5) return;
+  const v = Math.min(d, speed);
+  o.x += (dx / d) * v;
+  o.y += (dy / d) * v;
+}
+
 function updatePickups(w: World) {
   const p = w.player;
   for (const k of w.pickups) {
     if (k.taken) continue;
     k.t++;
+    if (k.mode === "float" && p.pw.magnet > 0 && p.dead === 0) pull(k, p.x + p.w / 2, p.y + p.h / 2, 6, 6, 2.5);
     if (k.mode === "pop") {
       if (k.t <= 10) k.y -= 1.6;
       else {
@@ -822,7 +967,8 @@ function updatePickups(w: World) {
     }
     if (p.dead === 0 && overlap(p, k.x, k.y, 12, 12)) {
       k.taken = true;
-      applyPerk(w, w.friends[k.friend]);
+      if (k.power) applyPower(w, k.power);
+      else applyPerk(w, w.friends[k.friend]);
     }
   }
 }
@@ -876,7 +1022,22 @@ export function applyPerk(w: World, f: Friend) {
       break;
   }
   p.shots = Math.min(99, p.shots);
+  popup(w, f.perk === "points" ? `+${100 * pw}` : PERK_LABEL[f.perk], PERK_PART[f.perk]);
   sfx(w, f.perk === "points" ? "coin" : f.perk === "ally" ? "chime" : "powerup");
+}
+
+const PERK_PART: Record<string, number> = { health: PART.red, armor: PART.cyan, ally: PART.green, rapid: PART.pink, spread: PART.pink, ammo: PART.paper, power: PART.coin, points: PART.coin };
+export const POWER_PART: Record<PowerId, number> = { wings: PART.cyan, star: PART.coin, magnet: PART.red, zoom: PART.green };
+
+/** A power-up: it runs for a while (picking up another of the same kind starts it over). */
+export function applyPower(w: World, k: PowerId) {
+  const p = w.player;
+  p.pw[k] = POWER_TICKS[k];
+  if (k === "wings") p.airJumps = Math.max(p.airJumps, 1);
+  w.score += 50;
+  burst(w, p.x + p.w / 2, p.y + p.h / 2, 8, POWER_PART[k], 2);
+  popup(w, POWER_LABEL[k], POWER_PART[k]);
+  sfx(w, k === "star" ? "chime" : "powerup");
 }
 
 // ---------- foes ----------
@@ -1063,6 +1224,11 @@ function defeat(w: World, e: Enemy, i: number, how: How) {
     return;
   }
   countDefeat(w, e, how);
+  // Elites (permanently deleted files) sometimes leave a power-up behind.
+  if (e.elite && !e.mini && how !== "fall" && w.env.rng() < 0.5) {
+    const k = POWERS[Math.floor(w.env.rng() * POWERS.length)];
+    w.pickups.push({ friend: -1, power: k, x: e.x + e.w / 2 - 6, y: e.y, mode: "pop", t: 0, taken: false });
+  }
 }
 
 function countDefeat(w: World, e: Enemy, how: How) {
@@ -1078,6 +1244,12 @@ function playerVsEnemies(w: World) {
   if (p.dead > 0) return;
   for (const e of w.enemies) {
     if (!e.active || !touchable(e) || !overlap(p, e.x, e.y, e.w, e.h)) continue;
+    if (p.pw.star > 0) {
+      // The star tidies whatever it touches, shields and all.
+      e.shield = false;
+      hitEnemy(w, e, 99, "star");
+      continue;
+    }
     if (p.vy > 0 && p.prevBottom <= e.y + 6) {
       hitEnemy(w, e, p.stompDmg, "stomp");
       p.onGround = false;
@@ -1272,7 +1444,8 @@ function updateWaves(w: World) {
     }
     if (p.dead === 0 && overlap(p, v.x, v.y, 6, 10)) {
       w.waves.splice(i, 1);
-      hurtPlayer(w, v.x);
+      if (p.pw.star > 0) burst(w, v.x + 3, v.y + 5, 4, PART.coin, 1);
+      else hurtPlayer(w, v.x);
     }
   }
 }

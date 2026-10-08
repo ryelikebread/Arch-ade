@@ -1,10 +1,12 @@
 // Tidy Hop's pixel art, all original and drawn in code: ASCII sprites (one
 // character per pixel) and the level's static tiles, each painted once to
-// an offscreen canvas and reused every frame. Without a 2D context (tests
-// run in jsdom) every canvas comes back null and the renderer skips it.
+// an offscreen canvas and reused every frame. Each level theme recolors the
+// tiles, adds its own tile tops, props and backdrop. Without a 2D context
+// (tests run in jsdom) every canvas comes back null and the renderer skips it.
 
 import type { Ability, Perk } from "../../types";
-import { BASE, BRICK, DIRT, LADDER, PLAT, ROWS, T, tileAt, VIEW_H, VIEW_W, type Level } from "./level";
+import { BASE, BRICK, DIRT, LADDER, PLAT, ROWS, sectionAt, T, THEME_IDS, tileAt, VIEW_H, VIEW_W, type Level, type ThemeId } from "./level";
+import type { PowerId } from "./logic";
 
 type Img = HTMLCanvasElement;
 
@@ -322,11 +324,160 @@ function ringRows(w: number, h: number): string[] {
   return rows;
 }
 
+// ---------- power-ups (not files): 12x12 in the level, 7x7 on the HUD ----------
+
+const POWER_ROWS: Record<PowerId, string[]> = {
+  // Winged sneaker: double jump.
+  wings: [
+    "i...........",
+    "ii..i.......",
+    "iii.ii.i....",
+    ".iiiiiiii...",
+    "..lllllll...",
+    "......cccc..",
+    ".....ccCcc..",
+    ".....cccccc.",
+    ".....cccciic",
+    "....cccccccc",
+    "....CCCCCCCC",
+    "....iiiiiiii",
+  ],
+  // A star with a face: a short spell of invincibility.
+  star: [
+    ".....yy.....",
+    ".....yy.....",
+    "....yiyy....",
+    "yyyyyiyyyyyY",
+    ".yyyyyyyyyY.",
+    "..yykyykyY..",
+    "...ykyykY...",
+    "...yyyyyY...",
+    "..yyyyyyyY..",
+    "..yyY..yyY..",
+    ".yyY....yyY.",
+    ".yY......yY.",
+  ],
+  // Horseshoe magnet: pulls in coins and pickups.
+  magnet: [
+    "...rrrrrr...",
+    ".rrrrrrrrrr.",
+    ".rrirRRrrrr.",
+    "rri......rrR",
+    "rri......rrR",
+    "rri......rrR",
+    "rri......rrR",
+    "rri......rrR",
+    "iii......iii",
+    "iii......iii",
+    "sss......sss",
+    "SSS......SSS",
+  ],
+  // Lightning bolt: run faster.
+  zoom: [
+    "......gggg..",
+    ".....giggG..",
+    "....giggG...",
+    "...giggG....",
+    "..giggggggg.",
+    ".gggggggigG.",
+    "......gigG..",
+    ".....gigG...",
+    "....gigG....",
+    "...ggG......",
+    "..gG........",
+    ".g..........",
+  ],
+};
+
+const POWER_ICON: Record<PowerId, string[]> = {
+  wings: ["i.i.i..", "iiiii..", ".lllcc.", "...cccc", "..ccccc", "..CCCCC", "..iiiii"],
+  star: ["...y...", "..yiy..", "yyyyyyy", ".yyyyy.", "..yyy..", ".yy.yy.", ".y...y."],
+  magnet: [".rrrrr.", "rr...rr", "rr...rr", "rr...rr", "ii...ii", "ss...ss", "......."],
+  zoom: ["....gg.", "...gg..", "..gg...", ".ggggg.", "...gg..", "..gg...", ".g....."],
+};
+
+/** Each power-up's color (labels, HUD bars). */
+export const POWER_COLOR: Record<PowerId, string> = { wings: C.cyan, star: C.yellow, magnet: C.red, zoom: C.green };
+
+/** A wing on the player's back while double jump is on (two flaps). */
+const WING = [["ii.", "iii", ".ii"], ["...", "iii", "iii"]];
+
+// ---------- level themes: tile colors, tile tops, props, backdrop ----------
+
+interface Look {
+  sky: string;
+  /** Overrides for the tile letters: g/G top, d/D/e dirt, c/C platform, l/L ladder, m/M brick, s/S cabinet. */
+  pal: Record<string, string>;
+  /** A theme's own ground top, if not the grass one. */
+  top?: string[];
+  fill?: string[];
+  props: string[][];
+}
+
+export const LOOKS: Record<ThemeId, Look> = {
+  stacks: {
+    sky: C.bg,
+    pal: {},
+    props: [
+      [".iiiii..", "LLLLLL..", ".iiiiii.", "LLLLLLL.", "iiiiiiii", "LLLLLLLL"],
+      ["..u.y.", "..u.y.", ".LLLLL", ".LlllL", ".LlllL", ".LLLLL"],
+      ["..ll....", ".lLLl...", "lLLLLl..", "LLLLLLLL"],
+    ],
+  },
+  garden: {
+    sky: "#040f0c",
+    pal: { g: "#58d68d", G: "#2a8f4a", d: "#3a2516", D: "#4d3220", e: "#1e1209", c: "#d89a5a", C: "#7a4a22", l: "#6bff8f", L: "#2a8f4a", m: "#5f6f5f", M: "#3a463a", s: "#8f7a5a", S: "#5a4a32" },
+    top: ["g.gg.g.g", "gggggggg", "gGgggGgg", "GdGGdGGd", "dddDdddd", "dDdddddd", "dddddDdd", "ddddDddd"],
+    props: [
+      ["..p..", ".pyp.", "..p..", "..G..", ".GG..", "..G.."],
+      ["g..g.g", ".g.gg.", "GgGgGg"],
+      [".rrr.", "rrirr", "rrrrr", "..i..", "..i.."],
+    ],
+  },
+  server: {
+    sky: "#03060d",
+    pal: { g: "#4de1ff", G: "#1f7f99", d: "#1a2333", D: "#26324a", e: "#0b111c", c: "#ff9a3c", C: "#a85a1a", l: "#8a8fa8", L: "#4a4e66", m: "#3a4660", M: "#222b3d", s: "#5a6a8a", S: "#2e3850" },
+    top: ["GGGGGGGG", "gggggggg", "DSDDDDSD", "dddddddd", "dDDDDDDd", "dDddddDd", "dDDDDDDd", "dddddddd"],
+    fill: ["dDddddDd", "dDDDDDDd", "dddddddd", "dddddddd", "dDddddDd", "dDDDDDDd", "dddddddd", "dddddddd"],
+    props: [
+      ["SSSSSSS", "SgSrSgS", "SSSSSSS", "SgSgSrS", "SSSSSSS"],
+      [".SSSS.", "SccccS", "SCccCS", "SSSSSS", ".S..S."],
+      ["..ss....", ".s..s...", "s....s.s", "......s."],
+    ],
+  },
+  dunes: {
+    sky: "#120706",
+    pal: { g: "#e8b062", G: "#a8743a", d: "#5c3218", D: "#6e3e1e", e: "#2a1408", c: "#c8865a", C: "#7a4a22", l: "#d8b07a", L: "#8a6a3a", m: "#b8642c", M: "#7a3a14", s: "#a88a6a", S: "#6a4a32" },
+    top: ["..gggg..", "gggGgggg", "gGgggggG", "GGdGGGdG", "dddDdddd", "dDdddddd", "dddddDdd", "ddddDddd"],
+    props: [
+      ["..G...", "..G.G.", "G.GGG.", "GGG...", "..G...", "..G..."],
+      ["..oo..", ".oOOo.", "oOoOoO"],
+      [".LLL..", "LlLLL.", "LLLLLL"],
+    ],
+  },
+  frost: {
+    sky: "#040818",
+    pal: { g: "#f4ecff", G: "#a9c7e8", d: "#1c2c55", D: "#26386a", e: "#0c1430", c: "#a9e8ff", C: "#4d9fc8", l: "#c8d8f0", L: "#5c7ab0", m: "#5c7ab0", M: "#34507e", s: "#8aa0c8", S: "#4a5e88" },
+    top: ["gggggggg", "gGgggGgg", "gG.ggGg.", "G..GG..G", "dddDdddd", "dDdddddd", "dddddDdd", "ddddDddd"],
+    props: [
+      ["...G...", "..GGG..", ".GGGGG.", "..GGG..", ".GGGGG.", "GGGGGGG", "...D..."],
+      ["..i..", ".ici.", ".ici.", "icCci"],
+      [".ii.", "ikki", ".ii.", "iiii", "iiii", ".ii."],
+    ],
+  },
+};
+
 // ---------- the art set ----------
 
 export interface Art {
   player: Record<string, [Img | null, Img | null]>;
   big: Record<string, [Img | null, Img | null]>;
+  /** The star's flashing colors, small and big. */
+  starPlayer: Record<string, [Img | null, Img | null]>;
+  starBig: Record<string, [Img | null, Img | null]>;
+  powers: Record<PowerId, Img | null>;
+  powerIcons: Record<PowerId, Img | null>;
+  wing: [Img | null, Img | null][];
   helmet: [Img | null, Img | null];
   /** critters[ability][elite][frame][facing: 0 right, 1 left] */
   critters: Record<string, (Img | null)[][][]>;
@@ -347,7 +498,8 @@ export interface Art {
   blocks: { item: Img | null; coin: Img | null; used: Img | null };
   cards: Record<string, Img | null>;
   slab: { mid: Img | null; left: Img | null; right: Img | null; midDone: Img | null; leftDone: Img | null; rightDone: Img | null };
-  bg: Img | null;
+  /** One backdrop per theme the level uses. */
+  bgs: Partial<Record<ThemeId, Img | null>>;
   /** The static level, in pages 512px wide. */
   pages: { x: number; img: Img }[];
 }
@@ -357,10 +509,23 @@ const both = (rows: string[], pal: Record<string, string> = PAL): [Img | null, I
 export function buildArt(level: Level): Art {
   const player: Art["player"] = {};
   const big: Art["big"] = {};
+  const starPlayer: Art["starPlayer"] = {};
+  const starBig: Art["starBig"] = {};
+  const starry = (rows: string[]) => swap(rows, "pPcCyL", "yYoOiu");
   for (const [name, rows] of Object.entries(PLAYER_FRAMES)) {
     player[name] = both(rows);
     big[name] = both(bigger(rows));
+    starPlayer[name] = both(starry(rows));
+    starBig[name] = both(starry(bigger(rows)));
   }
+  const powers = {} as Art["powers"];
+  const powerIcons = {} as Art["powerIcons"];
+  for (const k of Object.keys(POWER_ROWS) as PowerId[]) {
+    powers[k] = paint(POWER_ROWS[k]);
+    powerIcons[k] = paint(POWER_ICON[k]);
+  }
+  const bgs: Art["bgs"] = {};
+  for (const sec of level.sections) bgs[sec.theme] ??= backdrop(sec.theme);
   const critters: Art["critters"] = {};
   for (const ability of Object.keys(BODY) as Ability[]) {
     const [b, bd, ol] = BODY[ability];
@@ -379,6 +544,11 @@ export function buildArt(level: Level): Art {
   return {
     player,
     big,
+    starPlayer,
+    starBig,
+    powers,
+    powerIcons,
+    wing: WING.map((rows) => both(rows)),
     helmet: both(HELMET),
     critters,
     minis,
@@ -401,48 +571,167 @@ export function buildArt(level: Level): Art {
       mid: paint(SLAB_MID), left: paint(SLAB_END), right: paint(flip(SLAB_END)),
       midDone: paint(slabDone(SLAB_MID)), leftDone: paint(slabDone(SLAB_END)), rightDone: paint(flip(slabDone(SLAB_END))),
     },
-    bg: backdrop(),
+    bgs,
     pages: levelPages(level),
   };
 }
 
 // ---------- backdrop and level ----------
 
-/** Far-off stacks of folders and a few stars; drawn once, scrolled slowly. */
-function backdrop(): Img | null {
+/** A theme's far-off scenery; drawn once, scrolled slowly. Kept dark so the sprites stay easy to read. */
+function backdrop(theme: ThemeId): Img | null {
   const s = surface(VIEW_W, VIEW_H);
   if (!s) return null;
   const g = s.g;
-  g.fillStyle = C.bg;
-  g.fillRect(0, 0, VIEW_W, VIEW_H);
-  for (let i = 0; i < 46; i++) {
-    g.fillStyle = i % 5 === 0 ? "#6a5a8e" : "#2e2250";
-    g.fillRect((i * 97 + (i % 7) * 13) % VIEW_W, 14 + ((i * 57) % 92), 1, 1);
-  }
-  const heights = [62, 88, 50, 104, 74, 58, 96, 70];
-  for (let i = 0; i < heights.length; i++) {
-    const x = i * 40 + 2;
-    const top = VIEW_H - heights[i];
-    g.fillStyle = C.night;
-    g.fillRect(x + 2, top - 6, 14, 6); // folder tab
-    g.fillRect(x, top, 38, heights[i]);
-    g.fillStyle = "#1a1030";
-    g.fillRect(x, top, 38, 1);
-    g.fillRect(x + 2, top - 6, 14, 1);
-    // little lit "windows": file labels on the stack
-    g.fillStyle = "#24163e";
-    for (let wy = top + 8; wy < VIEW_H - 30; wy += 12) g.fillRect(x + 6 + ((wy / 4) % 3) * 8, wy, 10, 3);
+  const r = (x: number, y: number, w: number, h: number, col: string) => {
+    g.fillStyle = col;
+    g.fillRect(Math.round(x), Math.round(y), w, h);
+  };
+  /** Horizontal bands of color, top to bottom, from y0 down. */
+  const bands = (y0: number, cols: string[], h: number) => cols.forEach((col, i) => r(0, y0 + i * h, VIEW_W, h, col));
+  r(0, 0, VIEW_W, VIEW_H, LOOKS[theme].sky);
+  const stars = (n: number, a: string, b: string, maxY: number) => {
+    for (let i = 0; i < n; i++) r((i * 97 + (i % 7) * 13) % VIEW_W, 14 + ((i * 57) % maxY), 1, 1, i % 5 === 0 ? a : b);
+  };
+  switch (theme) {
+    case "stacks": {
+      stars(46, "#6a5a8e", "#2e2250", 92);
+      const heights = [62, 88, 50, 104, 74, 58, 96, 70];
+      for (let i = 0; i < heights.length; i++) {
+        const x = i * 40 + 2;
+        const top = VIEW_H - heights[i];
+        r(x + 2, top - 6, 14, 6, C.night); // folder tab
+        r(x, top, 38, heights[i], C.night);
+        r(x, top, 38, 1, "#1a1030");
+        r(x + 2, top - 6, 14, 1, "#1a1030");
+        // little lit "windows": file labels on the stack
+        for (let wy = top + 8; wy < VIEW_H - 30; wy += 12) r(x + 6 + ((wy / 4) % 3) * 8, wy, 10, 3, "#24163e");
+      }
+      break;
+    }
+    case "garden": {
+      stars(30, "#5a8a6a", "#1a3a2a", 60);
+      // A pale moon, then two rows of rolling hills with round trees.
+      for (let y = -7; y <= 7; y++)
+        for (let x = -7; x <= 7; x++) {
+          const d = x * x + y * y;
+          if (d > 49 || (x - 4) ** 2 + (y + 2) ** 2 <= 30) continue; // a crescent
+          r(250 + x, 34 + y, 1, 1, d > 36 ? "#6f9a80" : "#a9d0b4");
+        }
+      for (let x = 0; x < VIEW_W; x++) {
+        const h1 = 70 + Math.round(Math.sin((x / VIEW_W) * Math.PI * 4) * 12 + Math.sin((x / VIEW_W) * Math.PI * 6) * 5);
+        r(x, VIEW_H - h1, 1, h1, "#0b2219");
+        const h2 = 42 + Math.round(Math.sin((x / VIEW_W) * Math.PI * 2 + 1) * 10);
+        r(x, VIEW_H - h2, 1, h2, "#0f2e21");
+      }
+      for (let i = 0; i < 9; i++) {
+        const x = 12 + i * 36 + (i % 3) * 5;
+        const y = VIEW_H - 58 + ((i * 7) % 12);
+        r(x + 4, y + 8, 2, 14, "#081a12");
+        for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) if (dx * dx + dy * dy <= 36) r(x + 5 + dx, y + 4 + dy, 1, 1, "#0d281c");
+      }
+      for (let i = 0; i < 14; i++) r((i * 71) % VIEW_W, 70 + ((i * 41) % 70), 1, 1, i % 2 ? "#c8ff6b" : "#6bff8f"); // fireflies
+      break;
+    }
+    case "server": {
+      bands(0, ["#03060d", "#040912", "#050b16"], 60);
+      // Rows of racks, their lights left on.
+      for (let i = 0; i < 8; i++) {
+        const x = i * 40 + 4;
+        const top = 30 + (i % 3) * 6;
+        r(x, top, 32, VIEW_H - top, "#0a1220");
+        r(x, top, 32, 1, "#16223a");
+        r(x + 1, top + 1, 1, VIEW_H - top, "#0e1830");
+        for (let u = top + 6; u < VIEW_H - 8; u += 7) {
+          r(x + 4, u, 24, 4, "#0e1830");
+          const k = (u * 7 + i * 13) % 11;
+          r(x + 6, u + 1, 1, 1, k < 5 ? "#2a8f4a" : k < 8 ? "#1f7f99" : "#8a2338");
+          r(x + 8, u + 1, 1, 1, k % 3 ? "#1f5f70" : "#2a8f4a");
+          r(x + 18, u + 1, 8, 2, "#0a1220");
+        }
+      }
+      for (let y = VIEW_H - 20; y < VIEW_H; y += 5) r(0, y, VIEW_W, 1, "#0b1424");
+      break;
+    }
+    case "dunes": {
+      bands(0, ["#120706", "#1a0a0a", "#22100e", "#2c1410", "#381a12", "#462014"], 18);
+      r(0, 108, VIEW_W, VIEW_H - 108, "#462014");
+      // The low sun, cut by stripes, behind the dunes.
+      for (let y = -24; y <= 0; y++)
+        for (let x = -24; x <= 24; x++) if (x * x + y * y <= 576 && !(y > -12 && (-y) % 4 === 1)) r(110 + x, 112 + y, 1, 1, y < -14 ? "#8a3a1c" : "#a8481c");
+      for (let x = 0; x < VIEW_W; x++) {
+        const h1 = 60 + Math.round(Math.sin((x / VIEW_W) * Math.PI * 2) * 14 + Math.sin((x / VIEW_W) * Math.PI * 6) * 4);
+        r(x, VIEW_H - h1, 1, h1, "#2a120a");
+        r(x, VIEW_H - h1, 1, 1, "#4a2412");
+        const h2 = 36 + Math.round(Math.sin((x / VIEW_W) * Math.PI * 4 + 2) * 8);
+        r(x, VIEW_H - h2, 1, h2, "#341810");
+      }
+      for (let i = 0; i < 4; i++) {
+        const x = 30 + i * 80;
+        const y = VIEW_H - 64 + (i % 2) * 8;
+        r(x, y, 3, 16, "#1c0c06");
+        r(x - 4, y + 4, 2, 6, "#1c0c06");
+        r(x - 4, y + 9, 4, 2, "#1c0c06");
+        r(x + 5, y + 2, 2, 6, "#1c0c06");
+        r(x + 3, y + 7, 4, 2, "#1c0c06");
+      }
+      break;
+    }
+    case "frost": {
+      stars(40, "#8aa0d8", "#2a3a6a", 70);
+      // An aurora ribbon, snowy peaks, and snow in the air.
+      for (let x = 0; x < VIEW_W; x++) {
+        const y = 34 + Math.round(Math.sin(x / 23) * 8 + Math.sin(x / 9) * 2);
+        r(x, y, 1, 3, x % 3 ? "#123a3a" : "#1a5a4a");
+        r(x, y + 3, 1, 4, "#0c2430");
+      }
+      const peaks = [[20, 70], [80, 96], [150, 64], [210, 104], [280, 78], [340, 90]];
+      for (const [px, hgt] of peaks) {
+        for (let y = 0; y < hgt; y++) {
+          const half = Math.round(y * 0.75);
+          const top = VIEW_H - hgt + y;
+          r(px - half, top, half * 2 + 1, 1, "#0e1834");
+          if (y < hgt / 5) r(px - half, top, half * 2 + 1, 1, "#5c6e98");
+          r(px + half, top, 1, 1, "#16234a");
+        }
+      }
+      for (let i = 0; i < 40; i++) r((i * 53 + 7) % VIEW_W, 20 + ((i * 89) % 150), 1, 1, "#a9c7e8");
+      break;
+    }
   }
   return s.c;
 }
 
 const PAGE_W = 512;
 
+/** A color at 55% brightness. */
+function dim(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (sh: number) => Math.round(((n >> sh) & 255) * 0.55).toString(16).padStart(2, "0");
+  return `#${ch(16)}${ch(8)}${ch(0)}`;
+}
+
+/** Small hash for placing props: the same column always gets the same answer. */
+const hash = (c: number) => ((c * 2654435761) >>> 0) % 1000;
+
 function levelPages(lv: Level): { x: number; img: Img }[] {
-  const tiles: Record<string, Img | null> = {
-    top: paint(DIRT_TOP), fill: paint(DIRT_FILL), plat: paint(PLAT_T), ladder: paint(LADDER_T), brick: paint(BRICK_T),
-  };
-  const cabinet = paint(cabinetRows());
+  const looks = new Map<ThemeId, { tiles: Record<string, Img | null>; cabinet: Img | null; props: (Img | null)[]; edge: string }>();
+  for (const id of THEME_IDS) {
+    if (!lv.sections.some((s) => s.theme === id)) continue;
+    const L = LOOKS[id];
+    const pal = { ...PAL, ...L.pal };
+    // Props are scenery: dimmed, so nothing reads as a pickup or a foe.
+    const propPal = Object.fromEntries(Object.entries(pal).map(([k, v]) => [k, dim(v)]));
+    looks.set(id, {
+      tiles: {
+        top: paint(L.top ?? DIRT_TOP, pal), fill: paint(L.fill ?? DIRT_FILL, pal), plat: paint(PLAT_T, pal), ladder: paint(LADDER_T, pal), brick: paint(BRICK_T, pal),
+      },
+      cabinet: paint(cabinetRows(), pal),
+      props: L.props.map((p) => paint(p, propPal)),
+      edge: pal.e,
+    });
+  }
+  const themeOf = lv.sections.map((s) => looks.get(s.theme)!);
   const W = lv.cols * T;
   const pages: { x: number; img: Img }[] = [];
   for (let px = 0; px < W; px += PAGE_W) {
@@ -452,22 +741,39 @@ function levelPages(lv: Level): { x: number; img: Img }[] {
     const c0 = Math.floor(px / T);
     const c1 = Math.min(lv.cols, Math.ceil((px + PAGE_W) / T));
     for (let c = c0; c < c1; c++) {
+      const look = themeOf[sectionAt(lv, c * T)];
+      // Props first, so tiles and everything else sit in front.
+      const gr = lv.ground[c];
+      const h = hash(c);
+      if (gr > 0 && h % 7 === 0 && c > lv.startCol + 3 && c < lv.goalCol - 12) {
+        const img = look.props[h % look.props.length];
+        const wide = img ? Math.ceil(img.width / T) : 1;
+        let clear = true;
+        for (let k = 0; k < wide; k++) {
+          if (lv.ground[c + k] !== gr) clear = false;
+          for (let rr = gr - 3; rr < gr; rr++) if (tileAt(lv, c + k, rr) !== 0) clear = false;
+        }
+        if (img && clear) g.drawImage(img, c * T - px, gr * T - img.height);
+      }
       for (let r = 0; r < ROWS; r++) {
         const t = tileAt(lv, c, r);
         let img: Img | null = null;
-        if (t === DIRT) img = tileAt(lv, c, r - 1) === DIRT ? tiles.fill : tiles.top;
-        else if (t === PLAT) img = tiles.plat;
-        else if (t === LADDER) img = tiles.ladder;
-        else if (t === BRICK) img = tiles.brick;
+        if (t === DIRT) img = tileAt(lv, c, r - 1) === DIRT ? look.tiles.fill : look.tiles.top;
+        else if (t === PLAT) img = look.tiles.plat;
+        else if (t === LADDER) img = look.tiles.ladder;
+        else if (t === BRICK) img = look.tiles.brick;
         if (img) g.drawImage(img, c * T - px, r * T);
         // pit walls get a dark edge
         if (t === DIRT && (lv.ground[c - 1] === -1 || lv.ground[c + 1] === -1) && r > BASE) {
-          g.fillStyle = "#1c0f30";
+          g.fillStyle = look.edge;
           g.fillRect(c * T - px + (lv.ground[c - 1] === -1 ? 0 : T - 1), r * T, 1, T);
         }
       }
     }
-    if (cabinet) for (const cb of lv.cabinets) if (cb.c * T + 16 > px && cb.c * T < px + PAGE_W) g.drawImage(cabinet, cb.c * T - px, cb.r * T);
+    for (const cb of lv.cabinets) {
+      const look = themeOf[sectionAt(lv, cb.c * T)];
+      if (look.cabinet && cb.c * T + 16 > px && cb.c * T < px + PAGE_W) g.drawImage(look.cabinet, cb.c * T - px, cb.r * T);
+    }
     pages.push({ x: px, img: s.c });
   }
   return pages;

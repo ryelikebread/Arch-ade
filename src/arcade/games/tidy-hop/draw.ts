@@ -4,9 +4,9 @@
 // often can't change how a round plays.
 
 import type { GameContext } from "../../types";
-import { BASE, T, VIEW_H, VIEW_W } from "./level";
-import { FLASH_CYCLE, foesLeft, READY_TICKS, SLAB_H, type Enemy, type World } from "./logic";
-import { BODY, C, ICON_AT, PART_COLORS, PERK_COLOR, type Art } from "./sprites";
+import { BASE, T, THEMES, VIEW_H, VIEW_W } from "./level";
+import { FLASH_CYCLE, foesLeft, POWER_TICKS, POWERS, READY_TICKS, SLAB_H, TITLE_TICKS, type Enemy, type World } from "./logic";
+import { BODY, C, ICON_AT, LOOKS, PART_COLORS, PERK_COLOR, POWER_COLOR, type Art } from "./sprites";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -19,22 +19,44 @@ export function drawWorld(ctx: GameContext, w: World, art: Art) {
   const cam = Math.round(w.cam);
   const sy = w.shake > 0 ? (w.tick % 4 < 2 ? 2 : -1) : 0;
 
-  g.fillStyle = C.bg;
-  g.fillRect(0, 0, VIEW_W, VIEW_H);
-  if (art.bg) {
-    const off = -(Math.round(cam * 0.3) % VIEW_W);
-    g.drawImage(art.bg, off, 0);
-    g.drawImage(art.bg, off + VIEW_W, 0);
+  // Each level's backdrop fills its part of the screen; where two levels meet, the view is cut in two.
+  const off = -(Math.round(cam * 0.3) % VIEW_W);
+  for (let i = 0; i < w.stages.length; i++) {
+    const x0 = Math.max(0, w.stages[i].x - cam);
+    const x1 = Math.min(VIEW_W, (w.stages[i + 1]?.x ?? Infinity) - cam);
+    if (x1 <= x0) continue;
+    const theme = w.stages[i].theme;
+    const bg = art.bgs[theme];
+    const whole = x0 <= 0 && x1 >= VIEW_W;
+    if (!whole) {
+      g.save();
+      g.beginPath();
+      g.rect(x0, 0, x1 - x0, VIEW_H);
+      g.clip();
+    }
+    g.fillStyle = LOOKS[theme].sky;
+    g.fillRect(x0, 0, x1 - x0, VIEW_H);
+    if (bg) {
+      g.drawImage(bg, off, 0);
+      g.drawImage(bg, off + VIEW_W, 0);
+    }
+    if (!whole) g.restore();
   }
   for (const p of art.pages) if (p.x < cam + VIEW_W && p.x + p.img.width > cam) g.drawImage(p.img, p.x - cam, sy);
 
   const inView = (x: number, wd: number) => x + wd > cam - 8 && x < cam + VIEW_W + 8;
 
-  // Checkpoints and the goal.
-  for (const cp of w.checkpoints) {
-    if (!inView(cp.x, 8)) continue;
+  // Checkpoints (each one starts a level: a board with its number) and the goal.
+  for (let i = 0; i < w.checkpoints.length; i++) {
+    const cp = w.checkpoints[i];
+    if (!inView(cp.x - 6, 20)) continue;
     const x = cp.x - cam;
     const top = BASE * T - 22 + sy;
+    const n = String(i + 2);
+    const bw = ctx.textWidth(n) + 6;
+    rect(g, x - 4, top - 12, bw + 2, 10, C.lilac);
+    rect(g, x - 3, top - 11, bw, 8, C.bg);
+    ctx.text(n, x, top - 9, cp.on ? C.green : C.ink);
     g.fillStyle = C.lilac;
     g.fillRect(x, top, 1, 22);
     const pen = art.pennant[cp.on ? 1 : 0];
@@ -93,10 +115,19 @@ export function drawWorld(ctx: GameContext, w: World, art: Art) {
   const p = w.player;
   for (const k of w.pickups) {
     if (k.taken || !inView(k.x, 12)) continue;
-    const f = w.friends[k.friend];
     const bob = k.mode === "float" ? (Math.floor((w.tick + k.friend * 7) / 10) % 2) : 0;
     const x = Math.round(k.x - cam);
     const y = Math.round(k.y) + bob + sy;
+    if (k.power) {
+      // A power-up: its own sprite with a twinkle going round it.
+      const img = art.powers[k.power];
+      if (img) g.drawImage(img, x, y);
+      else rect(g, x, y, 12, 12, POWER_COLOR[k.power]);
+      const a = (w.tick / 6) % (Math.PI * 2);
+      rect(g, x + 6 + Math.round(Math.cos(a) * 8), y + 6 + Math.round(Math.sin(a) * 8), 1, 1, "#ffffff");
+      continue;
+    }
+    const f = w.friends[k.friend];
     const card = art.cards[f.perk];
     if (card) g.drawImage(card, x, y);
     else rect(g, x, y, 12, 12, PERK_COLOR[f.perk]);
@@ -129,6 +160,12 @@ export function drawWorld(ctx: GameContext, w: World, art: Art) {
   }
 
   drawPlayer(ctx, w, art, cam, sy);
+
+  // What was just picked up, rising over your head.
+  for (const q of w.popups) {
+    if (q.t < 8 && q.t % 2) continue;
+    label(ctx, q.text, q.x - cam, Math.round(q.y) + sy, PART_COLORS[q.color]);
+  }
 
   // Paper balls.
   for (const s of w.shots) {
@@ -266,17 +303,34 @@ function drawFoeLabels(ctx: GameContext, w: World, cam: number, sy: number) {
 function drawPlayer(ctx: GameContext, w: World, art: Art, cam: number, sy: number) {
   const g = ctx.g;
   const p = w.player;
-  if (p.dead === 0 && p.inv > 0 && w.phase === "play" && w.tick % 4 < 2) return;
+  if (p.dead === 0 && p.inv > 0 && p.pw.star === 0 && w.phase === "play" && w.tick % 4 < 2) return;
   let frame = "stand";
   if (p.climbing) frame = Math.floor(p.anim / 6) % 2 ? "climbB" : "climbA";
   else if (!p.onGround || p.dead > 0) frame = "jump";
   else if (p.vx !== 0) frame = Math.floor(p.anim / 4) % 2 ? "runB" : "runA";
-  const set = p.big ? art.big : art.player;
+  // The star flashes between the usual colors and gold (slower as it runs out).
+  const starOn = p.pw.star > 0 && p.dead === 0 && Math.floor(w.tick / (p.pw.star < 60 ? 6 : 3)) % 2 === 0;
+  const set = starOn ? (p.big ? art.starBig : art.starPlayer) : p.big ? art.big : art.player;
   const img = set[frame]?.[p.facing > 0 ? 0 : 1] ?? null;
   const x = Math.round(p.x - cam);
   const y = Math.round(p.y) + sy;
+  // Speed boost: streaks behind you while running.
+  if (p.pw.zoom > 0 && Math.abs(p.vx) > 2.2 && p.dead === 0) {
+    const bx = p.vx > 0 ? x - 6 : x + p.w + 1;
+    rect(g, bx, y + p.h - 12, 5, 1, C.green);
+    rect(g, bx + (p.vx > 0 ? 2 : -2), y + p.h - 8, 4, 1, C.green);
+    rect(g, bx + (p.vx > 0 ? 1 : -1), y + p.h - 4, 3, 1, C.green);
+  }
+  // Wings on your back while double jump is on (flapping in the air).
+  if (p.pw.wings > 0 && !p.climbing && p.dead === 0 && (p.pw.wings > 60 || w.tick % 4 < 2)) {
+    const wf = !p.onGround && Math.floor(w.tick / 4) % 2 ? 1 : 0;
+    const wimg = art.wing[wf][p.facing > 0 ? 0 : 1];
+    const wx = p.facing > 0 ? x - 2 : x + p.w - 1;
+    if (wimg) g.drawImage(wimg, wx, y + (p.big ? 10 : 7));
+    else rect(g, wx, y + 8, 3, 3, C.ink);
+  }
   if (img) g.drawImage(img, x, y);
-  else rect(g, x, y, p.w, p.h, C.pink);
+  else rect(g, x, y, p.w, p.h, starOn ? C.yellow : C.pink);
   if (p.armor > 0 && !p.climbing) {
     const hm = art.helmet[p.facing > 0 ? 0 : 1];
     if (hm) g.drawImage(hm, x, y - 1);
@@ -322,6 +376,21 @@ function drawHud(ctx: GameContext, w: World, art: Art) {
   timer(p.big, "P", 1, 1, C.yellow);
   timer(w.ally.on, "A", w.ally.t, 1050, C.green);
 
+  // Power-ups running: a strip under the HUD on the right, each with its icon and time left.
+  let ux = VIEW_W - 2;
+  for (const k of POWERS) {
+    const left = p.pw[k];
+    if (left <= 0) continue;
+    ux -= 21;
+    if (left < 60 && w.tick % 6 < 3) continue;
+    rect(g, ux - 1, 12, 21, 9, C.bg);
+    const icon = art.powerIcons[k];
+    if (icon) g.drawImage(icon, ux, 13);
+    else rect(g, ux, 13, 7, 7, POWER_COLOR[k]);
+    rect(g, ux + 9, 16, 10, 2, "#2a1745");
+    rect(g, ux + 9, 16, Math.max(1, Math.round((left / POWER_TICKS[k]) * 10)), 2, POWER_COLOR[k]);
+  }
+
   // Bottom line: the foe you're about to meet (or just hit), by name.
   let best: Enemy | null = null;
   if (w.lastHit >= 0 && w.tick - w.lastHitT < 60 && w.enemies[w.lastHit]?.state === "alive") best = w.enemies[w.lastHit];
@@ -346,13 +415,25 @@ function drawHud(ctx: GameContext, w: World, art: Art) {
     for (let i = 0; i < pips; i++) rect(g, 15 + wd + i * 4, VIEW_H - 7, 3, 5, i < best.hits ? C.red : C.cyan);
   }
 
+  // The level you're in, bottom right.
+  const st = w.stages[w.stage];
+  if (st && w.phase === "play") {
+    const t = `${w.stage + 1}-${st.title}`;
+    const tw = ctx.textWidth(t);
+    rect(g, VIEW_W - tw - 4, VIEW_H - 10, tw + 4, 9, C.bg);
+    ctx.text(t, VIEW_W - tw - 2, VIEW_H - 7, C.lilac);
+  }
+
   // Banners.
+  const titleOn = w.phase === "play" && w.stage > 0 && w.tick - w.stageT < TITLE_TICKS && p.dead === 0;
   if (w.phase === "ready") {
+    stageTitle(ctx, w, 0, 26);
     banner(ctx, "READY", C.yellow, 3);
     const hint = "SPACE JUMP   X THROW";
     ctx.text(hint, Math.round(VIEW_W / 2 - ctx.textWidth(hint) / 2), 92, C.lilac);
     if (w.phaseT > READY_TICKS - 10) banner(ctx, "GO!", C.green, 3);
-  } else if (w.phase === "play" && w.tick < READY_TICKS + 20) banner(ctx, "GO!", C.green, 3);
+  } else if (titleOn) stageTitle(ctx, w, w.stage, 40);
+  else if (w.phase === "play" && w.tick < READY_TICKS + 20) banner(ctx, "GO!", C.green, 3);
   else if (w.phase === "goal" || (w.phase === "done" && w.won)) banner(ctx, "ALL TIDY!", C.green, 2);
   else if (w.phase === "over" || (w.phase === "done" && !w.won)) banner(ctx, "OUT OF LIVES", C.red, 2);
   else if (p.dead > 0 && p.lives > 0) banner(ctx, `${p.lives} LEFT`, C.pink, 2);
@@ -397,6 +478,22 @@ function drawLabel(ctx: GameContext, s: string, b: Box, color: string) {
 
 const pickupBox: Box = { x: 0, y: 0, w: 0 };
 const label = (ctx: GameContext, s: string, cx: number, y: number, color: string) => drawLabel(ctx, s, placeLabel(ctx, s, cx, y, pickupBox), color);
+
+/** "LEVEL 2 - PHOTOS" and the theme's name under it. */
+function stageTitle(ctx: GameContext, w: World, i: number, y: number) {
+  const st = w.stages[i];
+  if (!st) return;
+  const head = `LEVEL ${i + 1} - ${st.title}`;
+  const name = THEMES[st.theme].name;
+  const hw = ctx.textWidth(head) * 2;
+  const nw = ctx.textWidth(name);
+  const bw = Math.max(hw, nw) + 10;
+  const x = Math.round(VIEW_W / 2 - bw / 2);
+  rect(ctx.g, x, y - 4, bw, 24, C.bg);
+  rect(ctx.g, x, y + 19, bw, 1, C.lilac);
+  ctx.text(head, Math.round(VIEW_W / 2 - hw / 2), y, C.ink, 2);
+  ctx.text(name, Math.round(VIEW_W / 2 - nw / 2), y + 13, C.cyan);
+}
 
 function banner(ctx: GameContext, s: string, color: string, scale: number) {
   const wd = ctx.textWidth(s) * scale;

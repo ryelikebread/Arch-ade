@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { cast, seeded } from "../../round";
+import { cast, levelFolders, seeded } from "../../round";
 import { file, harness, nullContext, sampleRound } from "../../testing";
-import type { ArcadeFile, ArcadeRound, Friend, GameContext, Input, Perk } from "../../types";
+import type { ArcadeFile, ArcadeRound, Friend, GameContext, GameResult, Input, Perk } from "../../types";
 import { game, type TidyHopGame } from "./index";
-import { BASE, buildLevel, SAFE_COL, T, VIEW_W } from "./level";
+import { BASE, buildLevel, MAX_GAP, MAX_PLAT, MAX_STEP, SAFE_COL, sectionsFor, T, targetCols, THEME_IDS, THEMES, VIEW_W, type ThemeId } from "./level";
 import {
-  applyPerk, blocked, camTarget, FLASH_CYCLE, GOAL_PER_FOE, hitEnemy, hitsFor, hurtPlayer, JUMP_V, MAX_ACTIVE, MAX_SHOTS, MIN_FOES,
-  READY_TICKS, step, type Enemy, type World,
+  applyPerk, applyPower, blocked, camTarget, createWorld, die, FLASH_CYCLE, folderTitle, GOAL_PER_FOE, hitEnemy, hitsFor, hurtPlayer, JUMP_V, MAX_ACTIVE,
+  MAX_SHOTS, MIN_FOES, POWER_LABEL, POWER_TICKS, POWERS, READY_TICKS, RUN_FAST, step, type Enemy, type World,
 } from "./logic";
 
 const round = (...files: ArcadeFile[]): ArcadeRound => ({ source: "Plan", files });
@@ -115,7 +115,7 @@ describe("tidy hop: casting", () => {
     const inBlocks = w.blocks.filter((b) => b.friend >= 0).map((b) => w.friends[b.friend].perk);
     expect(inBlocks.length).toBe(7);
     expect(inBlocks).not.toContain("points");
-    expect(w.pickups.filter((k) => k.mode === "float").map((k) => w.friends[k.friend].perk)).toEqual(["points"]);
+    expect(w.pickups.filter((k) => k.mode === "float" && k.friend >= 0).map((k) => w.friends[k.friend].perk)).toEqual(["points"]);
     expect(w.slabs.length).toBeGreaterThanOrEqual(3);
     const small = start(empty()).w.level.cols;
     expect(start(big()).w.level.cols).toBeGreaterThan(small * 1.5);
@@ -186,7 +186,9 @@ describe("tidy hop: foe abilities", () => {
     expect(fast.speed).toBeGreaterThanOrEqual(basic.speed * 2.5);
     isolate(w, fast, basic);
     const lv = w.level;
-    const gap = Array.from(lv.ground).findIndex((g, c) => g < 0 && lv.ground[c - 1] === BASE);
+    // A pit with open flat ground before it (so the basic foe has room to walk back).
+    const flatBefore = (c: number) => [1, 2, 3, 4, 5, 6].every((k) => lv.ground[c - k] === BASE && !blocked(lv, (c - k) * T, (BASE - 3) * T, T, 3 * T));
+    const gap = Array.from(lv.ground).findIndex((g, c) => g < 0 && flatBefore(c));
     expect(gap).toBeGreaterThan(0);
     let end = gap;
     while (lv.ground[end] < 0) end++;
@@ -243,13 +245,16 @@ describe("tidy hop: foe abilities", () => {
     isolate(w, e);
     const lv = w.level;
     // Find a floating platform and stand the foe on it.
+    // (Its height depends on the level's theme.)
     let pc = -1;
-    for (let c = 0; c < lv.cols && pc < 0; c++) if (lv.tiles[(BASE - 5) * lv.cols + c] === 2 && lv.tiles[(BASE - 5) * lv.cols + c + 1] === 2) pc = c;
+    let pr = BASE - 5;
+    for (let c = 0; c < lv.cols && pc < 0; c++)
+      for (let r = BASE - 6; r <= BASE - 4 && pc < 0; r++) if (lv.tiles[r * lv.cols + c] === 2 && lv.tiles[r * lv.cols + c + 1] === 2) [pc, pr] = [c, r];
     expect(pc).toBeGreaterThan(0);
     w.player.x = pc * T - 60;
     w.cam = camTarget(w);
     e.x = pc * T + 2;
-    e.y = (BASE - 5) * T - e.h;
+    e.y = pr * T - e.h;
     e.dir = -1;
     e.active = true;
     w.player.inv = 9999;
@@ -259,7 +264,7 @@ describe("tidy hop: foe abilities", () => {
       dirs.add(e.dir);
     }
     expect(dirs.size).toBe(2);
-    expect(e.y + e.h).toBe((BASE - 5) * T);
+    expect(e.y + e.h).toBe(pr * T);
   });
 
   it("stomping hurts a foe; walking into one hurts you", () => {
@@ -517,6 +522,8 @@ describe("tidy hop: slabs, ladders, jumping", () => {
     let lc = -1;
     for (let c = 0; c < lv.cols && lc < 0; c++) if (lv.tiles[(BASE - 1) * lv.cols + c] === 3) lc = c;
     expect(lc).toBeGreaterThan(0);
+    let top = BASE - 1;
+    while (lv.tiles[(top - 1) * lv.cols + lc] === 3) top--;
     const p = w.player;
     p.x = lc * T;
     p.y = BASE * T - p.h;
@@ -524,7 +531,7 @@ describe("tidy hop: slabs, ladders, jumping", () => {
     ticks(w, 60, holding("up"));
     expect(p.climbing).toBe(false);
     expect(p.onGround).toBe(true);
-    expect(p.y + p.h).toBe((BASE - 5) * T);
+    expect(p.y + p.h).toBe(top * T);
     ticks(w, 60, holding("down"));
     expect(p.y + p.h).toBe(BASE * T);
   });
@@ -687,7 +694,7 @@ describe("tidy hop: robustness", () => {
     expect(w.friends.length).toBeLessThanOrEqual(32);
     expect(w.level.cols * T).toBeGreaterThan(VIEW_W * 10);
     // Every friend is somewhere: a block or a floating pickup.
-    const placed = w.blocks.filter((b) => b.friend >= 0).length + w.pickups.length;
+    const placed = w.blocks.filter((b) => b.friend >= 0).length + w.pickups.filter((k) => k.friend >= 0).length;
     expect(placed).toBe(w.friends.length);
   });
 
@@ -755,5 +762,330 @@ describe("tidy hop: robustness", () => {
       for (const bad of ["Math.random", "Date.now", "performance.now", "setTimeout", "setInterval", "requestAnimationFrame", "addEventListener", "shadowBlur", "getImageData", "filter ="])
         expect(src.includes(bad), `${f} uses ${bad}`).toBe(false);
     }
+  });
+});
+
+// ---------- power-ups, levels and themes ----------
+
+/** A world with every level forced to one theme (or picked by the rng when `themes` is empty). */
+function themed(r: ArcadeRound, seed: number, themes: ThemeId[]) {
+  let res: GameResult | null = null;
+  const w = createWorld({ cast: cast(r), rng: seeded(seed), sfx: () => {}, end: (x) => void (res = x), folders: levelFolders(r) }, themes);
+  return { w, result: () => res };
+}
+
+const input = (held: string[], pressed: string[] = []): Input => ({ ...idle, held: (b) => held.includes(b), pressed: (b) => pressed.includes(b) });
+
+/**
+ * A simple bot that only runs right and jumps at pits, walls and when stuck.
+ * It checks the ground, not the fighting: the foes (and power-ups, a speed
+ * boost makes its full-height jumps too long) are cleared away first, but
+ * pits still count, and it has to get across every one of them.
+ */
+function runBot(w: World, limit = 9000) {
+  const lv = w.level;
+  isolate(w);
+  w.pickups = w.pickups.filter((k) => !k.power);
+  for (const b of w.blocks) b.power = null;
+  let jumpT = 0;
+  let bestX = 0;
+  let stuck = 0;
+  for (let i = 0; i < limit && w.phase !== "done"; i++) {
+    const p = w.player;
+    if (w.phase === "play" && p.onGround && jumpT === 0) {
+      const col = Math.floor((p.x + p.w + 6) / T);
+      // A pit just ahead (off the end of a platform it just walks down).
+      const pit = lv.ground[col] < 0 && p.y + p.h >= lv.ground[col - 1] * T - 1;
+      const wall = [1, 6].some((dx) => blocked(lv, p.x + p.w + dx - 1, p.y + p.h - 4, 1, 3));
+      if (pit || wall || stuck > 20) jumpT = 16;
+    }
+    step(w, input(jumpT > 0 ? ["right", "fire"] : ["right"]));
+    if (jumpT > 0) jumpT--;
+    if (p.x > bestX + 0.5) {
+      bestX = p.x;
+      stuck = 0;
+    } else stuck++;
+  }
+}
+
+describe("tidy hop: levels and themes", () => {
+  it("the strip is cut into levels, each titled after one of the round's folders (cycled)", () => {
+    const { w } = start(sampleRound());
+    expect(w.stages.length).toBe(sectionsFor(targetCols(w.foesTotal)));
+    expect(w.stages.map((s) => s.title)).toEqual(["DOWNLOADS", "PHOTOS", "WORK", "MUSIC", "DOWNLOADS"].slice(0, w.stages.length));
+    // A round with one folder repeats it; a round with none gets a stand-in.
+    const one = start({ ...round(file("a.txt", "text", 10, "trashed")), folders: ["Desktop"] }).w;
+    expect(new Set(one.stages.map((s) => s.title))).toEqual(new Set(["DESKTOP"]));
+    expect(start(empty()).w.stages[0].title).toBe("FILES");
+    expect(folderTitle("my very long folder name!")).toBe("MY VERY LONG .");
+    // Each level after the first starts at a checkpoint.
+    expect(w.checkpoints.map((c) => c.x)).toEqual(w.stages.slice(1).map((s) => s.x + 4));
+  });
+
+  it("the title shows at READY and again when you walk into the next level", () => {
+    const texts: string[] = [];
+    const t = harness(game, sampleRound());
+    Object.assign(t.ctx, { g: nullContext(), text: (s: string) => void texts.push(s) });
+    const w = (t.game as TidyHopGame).world;
+    t.game.draw();
+    expect(texts).toContain("LEVEL 1 - DOWNLOADS");
+    expect(texts).toContain(THEMES[w.stages[0].theme].name);
+    t.run(READY_TICKS + 1);
+    isolate(w);
+    w.player.x = w.stages[1].x + 2;
+    w.cam = camTarget(w);
+    step(w, idle);
+    expect(w.stage).toBe(1);
+    texts.length = 0;
+    t.game.draw();
+    expect(texts).toContain("LEVEL 2 - PHOTOS");
+    expect(texts).toContain(`2-PHOTOS`);
+  });
+
+  it("themes are picked at random, never the same twice in a row, and every theme turns up", () => {
+    const seen = new Set<ThemeId>();
+    for (let seed = 1; seed <= 40; seed++) {
+      const lv = buildLevel(20, 4, seeded(seed));
+      lv.sections.forEach((s, i) => {
+        seen.add(s.theme);
+        if (i > 0) expect(s.theme).not.toBe(lv.sections[i - 1].theme);
+      });
+    }
+    expect([...seen].sort()).toEqual([...THEME_IDS].sort());
+    expect(THEME_IDS.length).toBeGreaterThanOrEqual(4);
+  });
+
+  for (const id of THEME_IDS) {
+    it(`${id}: every pit, step and platform is in reach, and the start is safe`, () => {
+      for (const n of [0, 24, 48])
+        for (let seed = 1; seed <= 25; seed++) {
+          const lv = buildLevel(n, 4, seeded(seed), [id]);
+          expect(lv.sections.every((s) => s.theme === id)).toBe(true);
+          const ground = Array.from(lv.ground);
+          expect(ground.findIndex((g) => g < 0)).toBeGreaterThanOrEqual(SAFE_COL);
+          let run = 0;
+          for (let c = 1; c < lv.cols; c++) {
+            if (ground[c] < 0) {
+              run++;
+              expect(run).toBeLessThanOrEqual(MAX_GAP);
+            } else {
+              run = 0;
+              // Steps up are never taller than MAX_STEP (dropping down is fine).
+              if (ground[c - 1] >= 0) expect(ground[c - 1] - ground[c]).toBeLessThanOrEqual(MAX_STEP);
+            }
+          }
+          // Every platform tile has the ground or another platform at most MAX_PLAT rows under it.
+          for (let c = 0; c < lv.cols; c++)
+            for (let r = 0; r < BASE; r++) {
+              if (lv.tiles[r * lv.cols + c] !== 2) continue;
+              expect(r).toBeGreaterThanOrEqual(4);
+              let ok = lv.ground[c] >= 0 && lv.ground[c] - r <= MAX_PLAT;
+              for (let dc = -3; dc <= 3 && !ok; dc++)
+                for (let rr = r + 1; rr <= r + MAX_PLAT && !ok; rr++) ok = lv.tiles[rr * lv.cols + c + dc] === 2;
+              expect(ok).toBe(true);
+            }
+          // Levels open on solid ground (their checkpoint stands there).
+          for (const s of lv.sections) expect(lv.ground[s.col]).toBeGreaterThanOrEqual(0);
+        }
+    });
+
+    it(`${id}: a run-and-jump bot gets from the start to the flag without falling in a pit`, () => {
+      for (const [r, seeds] of [[sampleRound(), [1, 2, 3]], [big(), [4]], [empty(), [5]]] as const)
+        for (const seed of seeds) {
+          const { w, result } = themed(r, seed, [id]);
+          runBot(w);
+          expect(result()?.won, `${id} seed ${seed}`).toBe(true);
+          expect(w.player.lives, `${id} seed ${seed}`).toBe(3);
+        }
+    });
+  }
+
+  it("a level with rng-picked themes is beatable too", () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const { w, result } = themed(sampleRound(), seed, []);
+      runBot(w);
+      expect(result()?.won).toBe(true);
+      expect(w.player.lives).toBe(3);
+    }
+  });
+
+  it("themes change the layout a little: pit widths, pit counts, platform heights, ground steps", () => {
+    const stats = (id: ThemeId) => {
+      let pits = 0, wide = 0, cols = 0, highPlat = 0, step3 = 0;
+      for (let seed = 1; seed <= 20; seed++) {
+        const lv = buildLevel(30, 4, seeded(seed), [id]);
+        cols += lv.cols;
+        // (Up to the stairs before the flag, which are the same everywhere.)
+        for (let c = 1; c < lv.goalCol - 20; c++) {
+          if (lv.ground[c] < 0 && lv.ground[c - 1] >= 0) {
+            pits++;
+            if (lv.ground[c + 2] < 0) wide++;
+          }
+          if (lv.ground[c] === BASE - 3) step3++;
+          if (lv.tiles[(BASE - 6) * lv.cols + c] === 2) highPlat++;
+        }
+      }
+      return { pitsPer1000: (pits / cols) * 1000, wide, highPlat, step3 };
+    };
+    const garden = stats("garden");
+    const dunes = stats("dunes");
+    const server = stats("server");
+    const stacks = stats("stacks");
+    expect(dunes.pitsPer1000).toBeGreaterThan(garden.pitsPer1000);
+    expect(garden.wide).toBe(0);
+    expect(server.wide).toBeGreaterThan(0);
+    expect(stacks.highPlat).toBe(0);
+    expect(server.highPlat).toBeGreaterThan(0);
+    expect(stacks.step3).toBe(0);
+    expect(dunes.step3).toBeGreaterThan(0);
+  });
+});
+
+describe("tidy hop: power-ups", () => {
+  it("power-ups wait in some blocks and float once in each level, every kind turning up", () => {
+    const kinds = new Set<string>();
+    for (let seed = 1; seed <= 6; seed++) {
+      const { w } = start(sampleRound(), seed);
+      const floating = w.pickups.filter((k) => k.power);
+      expect(floating.length).toBe(w.stages.length);
+      for (const k of floating) kinds.add(k.power!);
+      for (const b of w.blocks) {
+        expect(b.friend >= 0 && b.power !== null).toBe(false);
+        if (b.power) kinds.add(b.power);
+      }
+    }
+    expect([...kinds].sort()).toEqual([...POWERS].sort());
+  });
+
+  it("a power block pops its power-up, which flies to you, says what it is, and shows on the HUD", () => {
+    const { t, w } = playing();
+    const b = w.blocks.find((b) => b.friend < 0)!;
+    b.power = "magnet";
+    const p = w.player;
+    p.x = b.c * T + 3;
+    p.y = BASE * T - p.h;
+    w.cam = camTarget(w);
+    isolate(w);
+    let hold: Input = holding("fire");
+    for (let i = 0; i < 60 && p.pw.magnet === 0; i++) {
+      step(w, hold);
+      if (b.used) hold = idle;
+    }
+    expect(p.pw.magnet).toBeGreaterThan(0);
+    expect(w.popups.map((q) => q.text)).toContain(POWER_LABEL.magnet);
+    expect(w.collected).toBe(0);
+    const texts: string[] = [];
+    Object.assign(t.ctx, { g: nullContext(), text: (s: string) => void texts.push(s) });
+    t.game.draw();
+    expect(texts).toContain("MAGNET");
+  });
+
+  it("every power-up runs out after a while", () => {
+    const { w } = playing();
+    isolate(w);
+    for (const k of POWERS) applyPower(w, k);
+    ticks(w, Math.max(...Object.values(POWER_TICKS)) + 1);
+    for (const k of POWERS) expect(w.player.pw[k]).toBe(0);
+  });
+
+  it("double jump: one more jump in mid-air, and it goes higher", () => {
+    const apex = (wings: boolean) => {
+      const { w } = playing();
+      isolate(w);
+      if (wings) applyPower(w, "wings");
+      const y0 = w.player.y;
+      let top = y0;
+      for (let i = 0; i < 60; i++) {
+        // Jump, let go, then tap jump again on the way up.
+        step(w, i < 12 ? holding("fire") : i === 16 ? input(["fire"], ["fire"]) : idle);
+        top = Math.min(top, w.player.y);
+      }
+      return { rise: y0 - top, w };
+    };
+    const plain = apex(false);
+    const winged = apex(true);
+    expect(winged.rise).toBeGreaterThan(plain.rise + 20);
+    expect(winged.w.player.airJumps).toBe(1); // back on the ground: ready again
+  });
+
+  it("star: foes you touch are beaten and can't hurt you; sound waves too", () => {
+    const { w } = playing(zoo());
+    const e = foeOf(w, "tank");
+    const s = foeOf(w, "shield");
+    isolate(w, e, s);
+    applyPower(w, "star");
+    place(e, w.player.x + 4);
+    place(s, w.player.x + 40);
+    ticks(w, 40, holding("right"));
+    expect(e.state).not.toBe("alive");
+    expect(s.state).not.toBe("alive");
+    expect(w.defeated).toBe(2);
+    expect(w.player.hearts).toBe(3);
+    w.waves.push({ x: w.player.x, y: w.player.y + 2, vx: 0, life: 50 });
+    step(w, idle);
+    expect(w.player.hearts).toBe(3);
+  });
+
+  it("magnet: coins in reach fly to you", () => {
+    const { w } = playing();
+    isolate(w);
+    const p = w.player;
+    for (const c of w.coins) c.taken = true;
+    w.coins.push({ x: p.x + 60, y: p.y - 10, taken: false }, { x: p.x + 160, y: p.y - 10, taken: false });
+    ticks(w, 40);
+    expect(w.coins.at(-2)!.taken).toBe(false);
+    applyPower(w, "magnet");
+    const s0 = w.score;
+    ticks(w, 40);
+    expect(w.coins.at(-2)!.taken).toBe(true);
+    expect(w.coins.at(-1)!.taken).toBe(false);
+    expect(w.score).toBeGreaterThan(s0);
+  });
+
+  it("speed up: you run faster", () => {
+    const top = (zoom: boolean) => {
+      const { w } = playing();
+      isolate(w);
+      if (zoom) applyPower(w, "zoom");
+      ticks(w, 20, holding("right"));
+      return w.player.vx;
+    };
+    expect(top(false)).toBe(2);
+    expect(top(true)).toBe(RUN_FAST);
+  });
+
+  it("losing a life ends every power-up", () => {
+    const { w } = playing();
+    isolate(w);
+    for (const k of POWERS) applyPower(w, k);
+    die(w, true);
+    ticks(w, 40);
+    expect(w.player.dead).toBe(0);
+    for (const k of POWERS) expect(w.player.pw[k]).toBe(0);
+  });
+
+  it("an elite foe sometimes leaves a power-up behind", () => {
+    let drops = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const { w } = playing(sampleRound(), seed);
+      const e = w.enemies.find((e) => e.elite && e.ability !== "split")!;
+      const before = w.pickups.length;
+      e.shield = false;
+      hitEnemy(w, e, 99, "shot");
+      if (w.pickups.length > before) {
+        drops++;
+        expect(w.pickups.at(-1)!.power).not.toBeNull();
+      }
+    }
+    expect(drops).toBeGreaterThan(0);
+    expect(drops).toBeLessThan(12);
+  });
+
+  it("kept files say what they gave you too", () => {
+    const { w } = playing();
+    applyPerk(w, friend("armor", 3));
+    expect(w.popups.at(-1)!.text).toBe("HELMET");
+    applyPerk(w, friend("points", 3));
+    expect(w.popups.at(-1)!.text).toBe("+300");
   });
 });
