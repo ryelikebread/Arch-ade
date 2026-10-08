@@ -3,16 +3,14 @@
 
 import type { GameContext } from "../../types";
 import {
-  ARMOR_Y, BALL, BRICK_H, C, DRONE_Y, H, LEFT, PADDLE_H, PADDLE_W, PADDLE_Y, PERK_COLOR, RIGHT, W,
-  brickColor, foesLeft, jammed, visible, type Brick, type State,
+  ARMOR_Y, BALL, BRICK_H, C, DRONE_Y, H, LEFT, PADDLE_H, PADDLE_W, PADDLE_Y, PICKUP_COLOR, RIGHT, W,
+  brickColor, foesLeft, jammed, themeOf, visible, type Brick, type Pickup, type State,
 } from "./logic";
+import { levelTitle } from "./levels";
 import type { Foe } from "../../types";
 import type { Art, FaceKind } from "./sprites";
 
 const LABEL_INK = "#1a1030";
-
-/** Up to n characters, with a dot when cut. */
-const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}.` : s);
 
 /** Name tag on a wide brick: 7 characters; a cut keeps a number at the end, so VIDEO-23 and VIDEO-24 stay apart. */
 export function tagText(foe: Foe): string {
@@ -26,9 +24,11 @@ export function tagText(foe: Foe): string {
 
 export function render(s: State, ctx: GameContext, art: Art | null) {
   const g = ctx.g;
-  if (art?.bg) g.drawImage(art.bg, 0, 0);
+  const theme = themeOf(s);
+  const bg = art?.background(theme) ?? null;
+  if (bg) g.drawImage(bg, 0, 0);
   else {
-    g.fillStyle = C.bg;
+    g.fillStyle = theme.bg;
     g.fillRect(0, 0, W, H);
   }
   const shaking = s.shake > 0;
@@ -52,6 +52,8 @@ function label(ctx: GameContext, art: Art | null, text: string, x: number, y: nu
   else ctx.text(text, Math.round(x), Math.round(y), color);
 }
 
+const colorOf = (s: State, b: Brick) => brickColor(b, themeOf(s).wall);
+
 function faceKind(b: Brick): FaceKind {
   if (!b.foe) return "wall";
   if (!b.foe.file) return "filler";
@@ -62,9 +64,9 @@ function faceKind(b: Brick): FaceKind {
 const faces = new WeakMap<Brick, CanvasImageSource | null>();
 const tags = new WeakMap<Brick, CanvasImageSource | null>();
 
-function faceOf(art: Art, b: Brick) {
+function faceOf(s: State, art: Art, b: Brick) {
   let img = faces.get(b);
-  if (img === undefined) faces.set(b, (img = art.face(faceKind(b), brickColor(b), b.w, b.elite)));
+  if (img === undefined) faces.set(b, (img = art.face(faceKind(b), colorOf(s, b), b.w, b.elite)));
   return img;
 }
 
@@ -93,10 +95,10 @@ function bricks(s: State, ctx: GameContext, art: Art | null) {
       if (jammed(b)) x += s.tick & 1; // boxed in: it revs in place
       else speedLines(ctx, b, x);
     }
-    const face = art ? (b.flash > 0 ? art.white(b.w) : faceOf(art, b)) : null;
+    const face = art ? (b.flash > 0 ? art.white(b.w) : faceOf(s, art, b)) : null;
     if (face) g.drawImage(face, x, y);
     else {
-      g.fillStyle = b.flash > 0 ? C.ink : brickColor(b);
+      g.fillStyle = b.flash > 0 ? C.ink : colorOf(s, b);
       g.fillRect(x, y, b.w, BRICK_H);
     }
     if (b.foe && b.flash === 0) {
@@ -163,22 +165,19 @@ function speedLines(ctx: GameContext, b: Brick, x: number) {
 function falling(s: State, ctx: GameContext, art: Art | null) {
   const g = ctx.g;
   for (const c of s.capsules) {
-    const f = s.friends[c.friend];
+    const f = c.friend >= 0 ? s.friends[c.friend] : null;
     const x = Math.round(c.x - 11), y = Math.round(c.y);
-    const color = PERK_COLOR[f.perk];
-    const pill = art?.capsule(f.perk, color) ?? null;
+    const color = PICKUP_COLOR[c.pickup];
+    const pill = art?.capsule(c.pickup, color) ?? null;
     if (pill) g.drawImage(pill, x, y);
     else {
       g.fillStyle = color;
       g.fillRect(x, y, 22, 10);
     }
-    const icon = ctx.icon(f.file.kind) ?? art?.fileMark ?? null;
-    if (icon) g.drawImage(icon, x + 3, y + 1);
-    // name tag beside it (on the left near the right wall), unless another capsule is in the way
-    const name = short(f.label, 8);
-    const tw = ctx.textWidth(name);
-    const lx = x + 24 + tw > RIGHT ? x - tw - 2 : x + 24;
-    if (!s.capsules.some((o) => o !== c && Math.abs(o.y - c.y) < 11 && o.x + 11 > lx && o.x - 11 < lx + tw)) label(ctx, art, name, lx, y + 3, color);
+    // a kept file shows its kind icon in the well, a drop its symbol; the letter says what it is
+    // (no name beside it: it would run over bricks; the name pops up when caught)
+    const icon = f ? ctx.icon(f.file.kind) ?? art?.fileMark ?? null : art?.sym(c.pickup, color) ?? null;
+    if (icon) g.drawImage(icon, f ? x + 3 : x + 4, f ? y + 1 : y + 2);
   }
   for (const w of s.waves) {
     const img = art?.waves[(w.t >> 3) & 1] ?? null;
@@ -223,12 +222,24 @@ function player(s: State, ctx: GameContext, art: Art | null) {
     g.fillStyle = p.shrink > 0 ? C.yellow : C.cyan;
     g.fillRect(x, PADDLE_Y, p.w, PADDLE_H);
   }
+  if (s.catch > 0 && (s.catch > 60 || s.tick & 4)) {
+    // sticky dots along the top
+    g.fillStyle = PICKUP_COLOR.catch;
+    for (let i = 7; i < p.w - 7; i += 4) g.fillRect(x + i, PADDLE_Y - 1, 2, 1);
+  }
   if (s.rapid > 0) {
     g.fillStyle = C.orange;
     g.fillRect(x + 2, PADDLE_Y - 2, 2, 2);
     g.fillRect(x + p.w - 4, PADDLE_Y - 2, 2, 2);
   }
   const ball = (s.fire > 0 ? art?.fireball : art?.ball) ?? null;
+  if (s.slow > 0 && s.fire <= 0)
+    // slow balls leave a short teal trail
+    for (const b of s.balls)
+      if (b.alive && !b.stuck) {
+        g.fillStyle = PICKUP_COLOR.slow;
+        g.fillRect(Math.round(b.x - b.vx * 2) + 1, Math.round(b.y - b.vy * 2) + 1, 2, 2);
+      }
   for (const b of s.balls) {
     if (!b.alive) continue;
     if (ball) g.drawImage(ball, Math.round(b.x), Math.round(b.y));
@@ -278,40 +289,46 @@ function hud(s: State, ctx: GameContext, art: Art | null) {
     const x0 = Math.round(W / 2 - (tw + 12 + b.maxHits * 3) / 2);
     const icon = b.foe.file ? ctx.icon(b.foe.file.kind) ?? art?.fileMark ?? null : null;
     if (icon) g.drawImage(icon, x0, 1);
-    label(ctx, art, name, x0 + 10, 2, b.elite ? C.yellow : brickColor(b));
+    label(ctx, art, name, x0 + 10, 2, b.elite ? C.yellow : colorOf(s, b));
     for (let i = 0; i < b.maxHits; i++) {
       g.fillStyle = i < b.hits ? C.ink : "#3b2e63";
       g.fillRect(x0 + 12 + tw + i * 3, 4, 2, 2);
     }
-  } else label(ctx, art, "BRICK SORT", W / 2 - 19, 2, C.lilac);
+  } else label(ctx, art, s.title, Math.round(W / 2 - ctx.textWidth(s.title) / 2), 2, themeOf(s).accent);
   const foes = `FOES ${foesLeft(s)}`;
   ctx.text(foes, RIGHT - ctx.textWidth(foes) - 1, 2, C.cyan);
 
   // active power-ups along the bottom: symbol and a shrinking bar
   if (s.phase !== "play" || !art) return;
   let x = LEFT + 3;
-  const show = (perk: Parameters<Art["sym"]>[0], t: number, color: string) => {
+  const show = (pickup: Pickup, t: number) => {
     if (t <= 0) return;
-    const sym = art.sym(perk, color);
+    const color = PICKUP_COLOR[pickup];
+    const sym = art.sym(pickup, color);
     if (sym) g.drawImage(sym, x, 174);
     g.fillStyle = color;
     g.fillRect(x + 7, 176, Math.min(24, Math.ceil(t / 30)), 1);
     x += 36;
   };
-  show("armor", s.armor, PERK_COLOR.armor);
-  show("rapid", s.rapid, PERK_COLOR.rapid);
-  show("power", s.fire, PERK_COLOR.power);
-  show("ally", s.drone.t, PERK_COLOR.ally);
+  show("armor", s.armor);
+  show("rapid", s.rapid);
+  show("power", s.fire);
+  show("ally", s.drone.t);
+  show("wide", s.wide);
+  show("catch", s.catch);
+  show("slow", s.slow);
 }
 
-/** READY / launch hint / CLEAR! / GAME OVER. */
+/** Level title / READY / launch hint / CLEAR! / GAME OVER. */
 function banner(s: State, ctx: GameContext) {
   const big = (text: string, y: number, color: string) => ctx.text(text, Math.round(W / 2 - ctx.textWidth(text)), y, color, 2);
   const small = (text: string, y: number, color: string) => ctx.text(text, Math.round(W / 2 - ctx.textWidth(text) / 2), y, color);
   if (s.phase === "ready") {
-    big("READY", 116, C.yellow);
+    const theme = themeOf(s);
+    big(s.title, 110, theme.accent);
+    small(theme.name, 124, C.ink);
     // foe bricks carry a file icon (or a scrap mark); plain wall bricks don't
-    small(`BREAK ALL ${s.foes.length} MARKED BRICKS`, 134, C.lilac);
+    small(`BREAK ALL ${s.levelEnd - s.levelStart} MARKED BRICKS`, 134, C.lilac);
     small("PLAIN WALL BRICKS ARE OPTIONAL", 141, "#7d6aa6");
   } else if (s.phase === "play") {
     // (not while a popup floats through that line)
@@ -320,5 +337,6 @@ function banner(s: State, ctx: GameContext) {
   } else if (s.phase === "clear" || (s.phase === "done" && s.result?.won)) {
     big("CLEAR!", 116, C.green);
     small(`BONUS +${s.bonus}`, 134, C.yellow);
+    if (s.level + 1 < s.levels) small(`NEXT: ${levelTitle(ctx.folders, s.level + 1)}`, 142, C.lilac);
   } else big("GAME OVER", 116, C.red);
 }

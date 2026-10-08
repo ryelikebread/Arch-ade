@@ -1,5 +1,7 @@
 // Brick Sort's rules, with no drawing. Trashed and deleted files are bricks
-// in a wall, kept files are power-up capsules hidden inside some of them.
+// in a wall, kept files are power-up capsules hidden inside some of them,
+// and a few extra capsules drop out of plain bricks. A big round's wall is
+// split into levels, each named after a folder and built in a random theme.
 // Everything is counted in ticks (30 a second) and every random number comes
 // from ctx.rng, so the same round and seed always play out the same.
 
@@ -8,6 +10,7 @@ import { textWidth } from "../../../pixel/font";
 import type { Kind } from "../../../types";
 import { MAX_FOES, filler } from "../../round";
 import type { Ability, Foe, Friend, GameContext, GameResult, Perk } from "../../types";
+import { THEMES, inPattern, levelCount, levelTitle, type Pattern, type Theme } from "./levels";
 
 // ---------- the playfield ----------
 export const W = 320;
@@ -27,6 +30,7 @@ export const PADDLE_Y = 160;
 export const PADDLE_H = 5;
 export const PADDLE_W = 44;
 export const PADDLE_SHORT = 28;
+export const PADDLE_WIDE = 64;
 export const BALL = 4;
 export const ARMOR_Y = 171;
 export const DRONE_Y = 128;
@@ -40,10 +44,16 @@ export const MAX_LIVES = 6;
 export const MAX_RESERVE = 5;
 export const BASE_SPEED = 1.7;
 export const MAX_SPEED = 3;
+/** The slow capsule's ball speed. */
+export const SLOW_SPEED = 1.25;
 const SPEED_UP = 0.0006;
 const PADDLE_SPEED = 5;
 const SERVE_AUTO = 150;
 const TIMER_CAP = 900;
+/** A caught ball lets go on its own after this long. */
+export const CATCH_AUTO = 75;
+/** Ticks between random capsule drops. */
+const DROP_GAP = 240;
 
 export const MAX_BALLS = 8;
 export const MAX_WAVES = 10;
@@ -90,6 +100,8 @@ export interface Brick {
   pierced: number;
   /** Friends (indexes into State.friends) that fall out when it breaks. */
   capsules: number[];
+  /** Extra capsules (not files) that fall out when it breaks. */
+  drops: Pickup[];
 }
 
 export interface Ball {
@@ -103,7 +115,15 @@ export interface Ball {
   off: number;
 }
 
-export interface Capsule { x: number; y: number; friend: number; alive: boolean }
+/**
+ * What a capsule gives: the kept files' perks, plus three that only drop out
+ * of plain bricks (wide paddle, catch paddle, slow ball).
+ */
+export type Pickup = Perk | "wide" | "catch" | "slow";
+export const DROPS: Pickup[] = ["spread", "wide", "catch", "slow"];
+
+/** friend: index into State.friends, or -1 for a drop that isn't a file. */
+export interface Capsule { x: number; y: number; friend: number; pickup: Pickup; alive: boolean }
 export interface Wave { x0: number; x: number; y: number; t: number; alive: boolean }
 export interface Bolt { x: number; y: number; alive: boolean }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string }
@@ -126,6 +146,16 @@ export interface State {
   reserve: number;
   /** Big rounds take fewer hits per brick so they stay short. */
   big: boolean;
+  /** Current level (0-based) and how many there are. */
+  level: number;
+  levels: number;
+  /** This level's foes are State.foes[levelStart..levelEnd). */
+  levelStart: number;
+  levelEnd: number;
+  /** Index into THEMES, the wall's shape, and "LEVEL 2 - DOWNLOADS". */
+  theme: number;
+  pattern: Pattern;
+  title: string;
   rows: number;
   /** Top of the first brick row. */
   gridY: number;
@@ -141,6 +171,13 @@ export interface State {
   rapidRate: number;
   rapidCd: number;
   fire: number;
+  /** Timers for the wide paddle, the catch paddle and the slow ball. */
+  wide: number;
+  catch: number;
+  slow: number;
+  /** A ball was caught (not served): it lets go on a press, not on a held key. */
+  caught: boolean;
+  dropCd: number;
   drone: { t: number; x: number; tx: number; cd: number; rate: number };
   capsules: Capsule[];
   waves: Wave[];
@@ -174,15 +211,26 @@ export const FAMILY_COLOR: Record<string, string> = {
   video: C.red, archive: C.orange, package: C.steel, other: C.pale,
 };
 
-export const PERK_COLOR: Record<Perk, string> = {
+export const PICKUP_COLOR: Record<Pickup, string> = {
   health: C.pink, armor: C.green, ally: C.violet, rapid: C.orange, spread: C.cyan, ammo: C.lilac, power: C.red, points: C.yellow,
+  wide: "#5a8cff", catch: "#d9dff0", slow: "#3fd1b0",
+};
+export const PERK_COLOR: Record<Perk, string> = PICKUP_COLOR;
+
+/** The letter on each capsule (all different). */
+export const PICKUP_LETTER: Record<Pickup, string> = {
+  health: "P", armor: "G", ally: "D", rapid: "L", spread: "M", ammo: "X", power: "F", points: "B", wide: "E", catch: "C", slow: "S",
 };
 
-export function brickColor(b: Brick): string {
-  if (!b.foe) return C.wall;
+/** Plain wall bricks take the level theme's color. */
+export function brickColor(b: Brick, wall: string = C.wall): string {
+  if (!b.foe) return wall;
   if (!b.foe.file) return C.dust;
   return FAMILY_COLOR[b.foe.family] ?? C.pale;
 }
+
+export const themeOf = (s: State): Theme => THEMES[s.theme];
+const colorOf = (s: State, b: Brick) => brickColor(b, themeOf(s).wall);
 
 // ---------- setup ----------
 
@@ -203,7 +251,8 @@ function brick(s: State, x: number, y: number, w: number, foe: Foe | null, ref: 
   const shield = ability === "shield" && foe ? 1 + (foe.hp >= 7 ? 1 : 0) : 0;
   const b: Brick = {
     id: s.nextId++, x, y, w, h: BRICK_H, foe, ref, ability, hits, maxHits: hits, shield, maxShield: shield,
-    elite: !!foe?.elite, alive: true, half: false, timer: 0, phase: Math.floor(rng() * 96), vx: 0, run: 0, jam: 0, warn: 0, flash: 0, pierced: 0, capsules: [],
+    elite: !!foe?.elite, alive: true, half: false, timer: 0, phase: Math.floor(rng() * 96), vx: 0, run: 0, jam: 0, warn: 0, flash: 0, pierced: 0,
+    capsules: [], drops: [],
   };
   if (ability === "teleport") b.timer = 120 + Math.floor(rng() * 120);
   if (ability === "sonic") b.timer = 60 + Math.floor(rng() * 120);
@@ -211,22 +260,50 @@ function brick(s: State, x: number, y: number, w: number, foe: Foe | null, ref: 
   return b;
 }
 
+/** In-pattern cells, and in-pattern pairs for wide bricks (on even columns), for a wall of `rows` rows. */
+function capacity(p: Pattern, rows: number): [number, number] {
+  let cells = 0, pairs = 0;
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < COLS; c++) {
+      if (!inPattern(p, r, c, rows, COLS)) continue;
+      cells++;
+      if (c % 2 === 0 && c + 1 < COLS && inPattern(p, r, c + 1, rows, COLS)) pairs++;
+    }
+  return [cells, pairs];
+}
+
 /**
- * Lay the foes out on the grid at random, then fill the gaps with plain wall
- * bricks. The wall never has more than MAX_ROWS rows: with 48 foes at most it
- * always fits (wide bricks on even columns: 6 per row, 48 in 8 rows).
+ * Lay this level's foes out on the grid at random, inside the level's shape,
+ * then fill the rest of the shape with plain wall bricks. The wall never has
+ * more than MAX_ROWS rows: with 48 foes at most it always fits (wide bricks on
+ * even columns: 6 per row, 48 in 8 rows). A shape too small for the level's
+ * foes grows rows; if it still can't hold them it becomes a full wall, and a
+ * foe that finds no room in the shape goes outside it (never left out).
  */
 function layout(s: State, rng: () => number) {
   const wide: number[] = [];
   const single: number[] = [];
-  s.foes.forEach((f, i) => (isWide(f) ? wide : single).push(i));
+  for (let i = s.levelStart; i < s.levelEnd; i++) (isWide(s.foes[i]) ? wide : single).push(i);
   const fast = (i: number) => s.foes[i].ability === "fast";
   // Fast bricks want a free cell beside them to slide into (a lane).
-  const need = wide.length * 2 + single.length + s.foes.filter((f) => f.ability === "fast").length;
-  const rows = Math.max(4, Math.min(MAX_ROWS, Math.ceil((need * 1.3) / COLS)));
+  let fasts = 0;
+  for (let i = s.levelStart; i < s.levelEnd; i++) if (fast(i)) fasts++;
+  const need = wide.length * 2 + single.length + fasts;
+  const fits = (p: Pattern, rows: number) => {
+    const [cells, pairs] = capacity(p, rows);
+    return cells >= need * 1.3 && pairs >= wide.length * 1.4;
+  };
+  let rows = Math.max(4, Math.min(MAX_ROWS, Math.ceil((need * 1.3) / COLS)));
+  while (rows < MAX_ROWS && !fits(s.pattern, rows)) rows++;
+  if (!fits(s.pattern, rows)) {
+    s.pattern = "full";
+    rows = Math.max(4, Math.min(MAX_ROWS, Math.ceil((need * 1.3) / COLS)));
+  }
   s.rows = rows;
   // A short wall hangs a little lower, leaving a channel above it.
   s.gridY = GRID_Y + Math.floor((MAX_ROWS - rows) / 2) * ROW;
+  const shape: boolean[] = [];
+  for (let k = 0; k < rows * COLS; k++) shape.push(inPattern(s.pattern, Math.floor(k / COLS), k % COLS, rows, COLS));
   // 0 free, 1 taken, 2 kept empty (a lane for a sliding brick)
   const occ: number[] = new Array(rows * COLS).fill(0);
   const shuffle = (a: number[]) => {
@@ -243,23 +320,26 @@ function layout(s: State, rng: () => number) {
   single.sort(fastFirst);
 
   const slots: number[] = [];
-  const open = (k: number, lanes: boolean) => occ[k] === 0 || (lanes && occ[k] === 2);
-  /** Fill `slots` with where a brick of `cells` fits; `lanes` lets it take a lane, `room` wants a free cell beside it. */
-  const find = (cells: number, lanes: boolean, room: boolean) => {
+  const open = (k: number, lanes: boolean, inside: boolean) => (occ[k] === 0 || (lanes && occ[k] === 2)) && (!inside || shape[k]);
+  /** Fill `slots` with where a brick of `cells` fits; `lanes` lets it take a lane, `room` wants a free cell beside it, `inside` keeps it in the shape. */
+  const find = (cells: number, lanes: boolean, room: boolean, inside: boolean) => {
     slots.length = 0;
     // Wide bricks sit on even columns so they can never strand each other.
     for (let r = 0; r < rows; r++)
       for (let c = 0; c + cells <= COLS; c += cells) {
         const k = r * COLS + c;
-        if (!open(k, lanes) || (cells === 2 && !open(k + 1, lanes))) continue;
+        if (!open(k, lanes, inside) || (cells === 2 && !open(k + 1, lanes, inside))) continue;
         if (room && !(c > 0 && occ[k - 1] === 0) && !(c + cells < COLS && occ[k + cells] === 0)) continue;
         slots.push(k);
       }
     return slots.length > 0;
   };
   const place = (i: number, cells: number) => {
-    // A spot with room to slide for fast bricks, else any free spot; a crowded wall uses the lanes too.
-    if (!(fast(i) && find(cells, false, true)) && !find(cells, false, false) && !find(cells, true, false)) {
+    // A spot with room to slide for fast bricks, else any free spot in the shape; a crowded wall uses the lanes, then cells outside the shape.
+    const found =
+      (fast(i) && find(cells, false, true, true)) || find(cells, false, false, true) || find(cells, true, false, true) ||
+      find(cells, false, false, false) || find(cells, true, false, false);
+    if (!found) {
       // Can't happen (see above), but never leave a foe that can't be beaten.
       s.left[i] = 0;
       s.defeated++;
@@ -277,20 +357,31 @@ function layout(s: State, rng: () => number) {
   };
   for (const i of wide) place(i, 2);
   for (const i of single) place(i, 1);
+  const fill = themeOf(s).fill;
   for (let k = 0; k < occ.length; k++)
-    if (occ[k] === 0 && rng() < 0.86) s.bricks.push(brick(s, cellX(k % COLS), rowY(s, Math.floor(k / COLS)), CELL - 2, null, -1, rng));
+    if (occ[k] === 0 && shape[k] && rng() < fill) s.bricks.push(brick(s, cellX(k % COLS), rowY(s, Math.floor(k / COLS)), CELL - 2, null, -1, rng));
 }
 
-/** Hide the friends in bricks spread across the wall: file bricks first, then wall bricks. */
-function hideCapsules(s: State) {
-  const n = s.friends.length;
-  if (!n) return;
+/** Hide this level's friends in bricks spread across the wall (file bricks first, then wall bricks), and two drops in wall bricks. */
+function hideCapsules(s: State, rng: () => number) {
   const byColumn = (a: Brick, b: Brick) => a.x - b.x || a.y - b.y;
   const foeBricks = s.bricks.filter((b) => b.foe).sort(byColumn);
   const wallBricks = s.bricks.filter((b) => !b.foe).sort(byColumn);
-  const pick = (list: Brick[], k: number) => Array.from({ length: Math.min(k, list.length) }, (_, i) => list[Math.floor(((i + 0.5) * list.length) / k)]);
-  const hosts = n <= foeBricks.length ? pick(foeBricks, n) : [...foeBricks, ...pick(wallBricks, n - foeBricks.length)];
-  for (let i = 0; i < n; i++) hosts[i % hosts.length].capsules.push(i);
+  const nf = s.friends.length, L = s.levels;
+  const first = Math.floor((s.level * nf) / L), end = Math.floor(((s.level + 1) * nf) / L);
+  const n = end - first;
+  if (n > 0) {
+    const pick = (list: Brick[], k: number) => Array.from({ length: Math.min(k, list.length) }, (_, i) => list[Math.floor(((i + 0.5) * list.length) / k)]);
+    const hosts = n <= foeBricks.length ? pick(foeBricks, n) : [...foeBricks, ...pick(wallBricks, n - foeBricks.length)];
+    for (let i = 0; i < n; i++) hosts[i % hosts.length].capsules.push(first + i);
+  }
+  // Every level hides a multiball and one other drop in plain bricks.
+  const free = wallBricks.filter((b) => !b.capsules.length);
+  const hosts = free.length ? free : s.bricks.filter((b) => !b.capsules.length);
+  for (const d of ["spread", DROPS[1 + Math.floor(rng() * (DROPS.length - 1))]] as Pickup[]) {
+    if (!hosts.length) break;
+    hosts.splice(Math.floor(rng() * hosts.length), 1)[0].drops.push(d);
+  }
 }
 
 export function newState(ctx: GameContext): State {
@@ -301,20 +392,53 @@ export function newState(ctx: GameContext): State {
   const s: State = {
     ctx, tick: 0, phase: "ready", phaseT: READY_TICKS,
     foes, friends: [...ctx.cast.friends], left: foes.map(() => 1), defeated: 0, collected: 0,
-    score: 0, lives: START_LIVES, reserve: 0, big: foes.length > 24, rows: 4, gridY: GRID_Y, bricks: [], nextId: 1,
+    score: 0, lives: START_LIVES, reserve: 0, big: foes.length > 24,
+    level: 0, levels: levelCount(foes.length), levelStart: 0, levelEnd: 0, theme: 0, pattern: "full", title: "",
+    rows: 4, gridY: GRID_Y, bricks: [], nextId: 1,
     paddle: { x: (W - PADDLE_W) / 2, w: PADDLE_W, shrink: 0, lastPointer: null },
     balls: Array.from({ length: MAX_BALLS }, () => ({ x: 0, y: 0, vx: 0, vy: 0, alive: false, stuck: false, off: 0 })),
     speed: BASE_SPEED, serveT: 0, stuckT: 0,
-    armor: 0, rapid: 0, rapidRate: 8, rapidCd: 0, fire: 0,
+    armor: 0, rapid: 0, rapidRate: 8, rapidCd: 0, fire: 0, wide: 0, catch: 0, slow: 0, caught: false, dropCd: 0,
     drone: { t: 0, x: W / 2, tx: W / 2, cd: 0, rate: 30 },
     capsules: [], waves: [], bolts: [],
     parts: Array.from({ length: MAX_PARTS }, () => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0, color: C.ink })),
     partAt: 0, popups: [], blasts: [], shake: 0, lastHit: null, lastHitT: 0, sinceTouch: 0, homing: false, bonus: 0, sfxAt: {}, result: null,
   };
-  layout(s, rng);
-  hideCapsules(s);
-  serveBall(s, 0);
+  startLevel(s, 0);
   return s;
+}
+
+/** Build level k: its theme, shape, wall and capsules, with a fresh ball on the paddle. Lives, spare balls and score carry over. */
+export function startLevel(s: State, k: number, force?: { theme: number; pattern: Pattern }) {
+  const rng = () => s.ctx.rng();
+  const n = s.foes.length;
+  s.level = k;
+  s.levelStart = Math.floor((k * n) / s.levels);
+  s.levelEnd = Math.floor(((k + 1) * n) / s.levels);
+  // A random theme, never the same one twice in a row.
+  let t = Math.floor(rng() * (k ? THEMES.length - 1 : THEMES.length));
+  if (k && t >= s.theme) t++;
+  const shapes = THEMES[t].patterns;
+  s.pattern = shapes[Math.floor(rng() * shapes.length)];
+  s.theme = t;
+  // (tests build every theme and shape)
+  if (force) [s.theme, s.pattern] = [force.theme, force.pattern];
+  s.title = levelTitle(s.ctx.folders, k);
+  s.phase = "ready";
+  s.phaseT = READY_TICKS;
+  s.bricks = [];
+  s.capsules.length = s.waves.length = s.bolts.length = s.blasts.length = s.popups.length = 0;
+  for (const b of s.balls) b.alive = b.stuck = false;
+  s.armor = s.rapid = s.fire = s.wide = s.catch = s.slow = s.dropCd = s.drone.t = 0;
+  s.caught = false;
+  s.paddle.shrink = 0;
+  s.speed = BASE_SPEED;
+  s.homing = false;
+  s.lastHit = null;
+  s.lastHitT = s.sinceTouch = s.bonus = 0;
+  layout(s, rng);
+  hideCapsules(s, rng);
+  serveBall(s, 0);
 }
 
 // ---------- small helpers ----------
@@ -362,10 +486,11 @@ function popup(s: State, text: string, x: number, y: number, color: string) {
 }
 
 /** How few foes left turns homing on. */
-export const homingAt = (s: State) => Math.max(4, Math.ceil(s.foes.length * 0.2));
+export const homingAt = (s: State) => Math.max(4, Math.ceil((s.levelEnd - s.levelStart) * 0.2));
 
 export const aliveBalls = (s: State) => s.balls.reduce((n, b) => n + (b.alive ? 1 : 0), 0);
-export const foesLeft = (s: State) => s.foes.length - s.defeated;
+/** Foes left in this level. */
+export const foesLeft = (s: State) => s.levelEnd - s.defeated;
 export const paddleCenter = (s: State) => s.paddle.x + s.paddle.w / 2;
 
 /** A new ball sitting on the paddle; it can launch after `delay` ticks. */
@@ -392,9 +517,13 @@ function launch(s: State) {
   for (const b of s.balls)
     if (b.alive && b.stuck) {
       b.stuck = false;
-      aim(s, b, (s.ctx.rng() - 0.5) * 0.6);
+      const r = (s.ctx.rng() - 0.5) * 0.6;
+      // a caught ball goes where it sits on the paddle, like a bounce
+      aim(s, b, b.off ? clamp(b.off / (s.paddle.w / 2), -1, 1) * 1.05 : r);
+      b.off = 0;
       any = true;
     }
+  s.caught = false;
   if (any) {
     sfx(s, "launch");
     s.sinceTouch = 0;
@@ -428,7 +557,7 @@ export function damage(s: State, b: Brick, n: number) {
   }
   b.hits -= n;
   if (b.hits > 0) {
-    spark(s, cx, cy, 3, brickColor(b), 0.8);
+    spark(s, cx, cy, 3, colorOf(s, b), 0.8);
     sfx(s, "hit");
     return;
   }
@@ -438,12 +567,19 @@ export function damage(s: State, b: Brick, n: number) {
 function breakBrick(s: State, b: Brick) {
   b.alive = false;
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
-  spark(s, cx, cy, b.foe ? 10 : 5, brickColor(b), 1.4);
+  spark(s, cx, cy, b.foe ? 10 : 5, colorOf(s, b), 1.4);
   for (const f of b.capsules) {
-    s.capsules.push({ x: cx, y: b.y + 2, friend: f, alive: true });
+    s.capsules.push({ x: cx, y: b.y + 2, friend: f, pickup: s.friends[f].perk, alive: true });
     sfx(s, "blip");
   }
   b.capsules.length = 0;
+  for (const d of b.drops) drop(s, cx, b.y + 2, d);
+  b.drops.length = 0;
+  // now and then a brick with nothing inside drops something anyway
+  if (s.dropCd <= 0 && s.ctx.rng() < (b.foe ? 0.07 : 0.035)) {
+    drop(s, cx, b.y + 2, DROPS[Math.floor(s.ctx.rng() * DROPS.length)]);
+    s.dropCd = DROP_GAP;
+  }
   if (!b.foe) {
     s.score += 10;
     sfx(s, "pop");
@@ -459,6 +595,11 @@ function breakBrick(s: State, b: Brick) {
     s.shake = 10;
     sfx(s, "explosion");
   } else sfx(s, "pop");
+}
+
+function drop(s: State, x: number, y: number, pickup: Pickup) {
+  s.capsules.push({ x, y, friend: -1, pickup, alive: true });
+  sfx(s, "blip");
 }
 
 /** An archive breaks into two halves; the foe is beaten when both are gone. */
@@ -492,15 +633,19 @@ function blasts(s: State) {
 
 // ---------- perks ----------
 
-export const PERK_WORD: Record<Perk, string> = {
-  health: "+LIFE", armor: "SAFETY BAR", ally: "DRONE", rapid: "RAPID FIRE", spread: "MULTIBALL", ammo: "+SPARE BALL", power: "FIREBALL", points: "BONUS",
+export const PICKUP_WORD: Record<Pickup, string> = {
+  health: "+LIFE", armor: "SAFETY BAR", ally: "DRONE", rapid: "LASER", spread: "MULTIBALL", ammo: "+SPARE BALL", power: "FIREBALL", points: "BONUS",
+  wide: "WIDE PADDLE", catch: "CATCH", slow: "SLOW BALL",
 };
+export const PERK_WORD: Record<Perk, string> = PICKUP_WORD;
 
 /** What catching a kept file's capsule does; power (1..10) sets how much. */
-export function applyPerk(s: State, f: Friend) {
-  const p = f.power;
-  let word = PERK_WORD[f.perk];
-  switch (f.perk) {
+export const applyPerk = (s: State, f: Friend) => applyPickup(s, f.perk, f.power);
+
+/** What catching a capsule does; power (1..10) sets how much (drops are 5). Returns the word to show. */
+export function applyPickup(s: State, pickup: Pickup, p: number) {
+  let word = PICKUP_WORD[pickup];
+  switch (pickup) {
     case "health":
       s.lives = Math.min(MAX_LIVES, s.lives + 1 + (p >= 8 ? 1 : 0));
       break;
@@ -517,7 +662,7 @@ export function applyPerk(s: State, f: Friend) {
       s.rapidRate = 8 - Math.floor(p / 4);
       break;
     case "spread":
-      multiball(s, 1 + Math.floor(p / 4));
+      multiball(s);
       break;
     case "ammo":
       s.reserve = Math.min(MAX_RESERVE, s.reserve + 1 + (p >= 7 ? 1 : 0));
@@ -529,27 +674,38 @@ export function applyPerk(s: State, f: Friend) {
       s.score += 100 * p;
       word = `+${100 * p}`;
       break;
+    case "wide":
+      s.wide = Math.min(TIMER_CAP, s.wide + 360 + p * 36);
+      s.paddle.shrink = 0;
+      break;
+    case "catch":
+      s.catch = Math.min(TIMER_CAP, s.catch + 360 + p * 36);
+      break;
+    case "slow":
+      s.slow = Math.min(TIMER_CAP, s.slow + 300 + p * 30);
+      s.speed = Math.min(s.speed, SLOW_SPEED);
+      break;
   }
   return word;
 }
 
-function multiball(s: State, extra: number) {
-  let src = s.balls.find((b) => b.alive && !b.stuck) ?? null;
-  if (!src) {
-    launch(s);
-    src = s.balls.find((b) => b.alive) ?? null;
-  }
-  if (!src) return;
-  const base = Math.atan2(src.vx, -src.vy);
-  for (let k = 0; k < extra; k++) {
-    const b = s.balls.find((x) => !x.alive);
-    if (!b) return;
-    b.alive = true;
-    b.stuck = false;
-    b.x = src.x;
-    b.y = src.y;
-    aim(s, b, base + (k % 2 ? -1 : 1) * (0.35 + 0.2 * Math.floor(k / 2)));
-    if (b.vy > 0) b.vy = -b.vy;
+/** Every ball in flight splits into three (one ball becomes three), up to MAX_BALLS. */
+function multiball(s: State) {
+  if (!s.balls.some((b) => b.alive && !b.stuck)) launch(s);
+  const flying = s.balls.filter((b) => b.alive && !b.stuck);
+  for (const src of flying) {
+    const base = Math.atan2(src.vx, -src.vy);
+    for (const turn of [-0.45, 0.45]) {
+      const b = s.balls.find((x) => !x.alive);
+      if (!b) return;
+      b.alive = true;
+      b.stuck = false;
+      b.off = 0;
+      b.x = src.x;
+      b.y = src.y;
+      aim(s, b, base + turn);
+      if (b.vy > 0) b.vy = -b.vy;
+    }
   }
 }
 
@@ -584,7 +740,10 @@ export function step(s: State) {
       break;
     case "clear":
       crumble(s);
-      if (--s.phaseT <= 0) finish(s);
+      if (--s.phaseT <= 0) {
+        if (s.level + 1 < s.levels) startLevel(s, s.level + 1);
+        else finish(s);
+      }
       break;
     case "over":
       if (--s.phaseT <= 0) finish(s);
@@ -597,7 +756,7 @@ function crumble(s: State) {
   for (const b of s.bricks)
     if (b.alive) {
       b.alive = false;
-      spark(s, b.x + b.w / 2, b.y + 5, 4, brickColor(b), 1);
+      spark(s, b.x + b.w / 2, b.y + 5, 4, colorOf(s, b), 1);
       sfx(s, "pop");
       return;
     }
@@ -620,6 +779,10 @@ function play(s: State) {
   if (s.armor > 0) s.armor--;
   if (s.rapid > 0) s.rapid--;
   if (s.fire > 0) s.fire--;
+  if (s.wide > 0) s.wide--;
+  if (s.catch > 0) s.catch--;
+  if (s.slow > 0) s.slow--;
+  if (s.dropCd > 0) s.dropCd--;
   if (s.paddle.shrink > 0) s.paddle.shrink--;
   for (const b of s.bricks) {
     if (b.flash > 0) b.flash--;
@@ -628,11 +791,13 @@ function play(s: State) {
   movePaddle(s);
   holdStuck(s);
 
-  // Launch: Space/click, or on its own after a few seconds.
+  // Launch: Space/click, or on its own after a few seconds. A caught ball
+  // waits for a fresh press (holding Space for the laser doesn't let go of it).
   if (s.balls.some((b) => b.alive && b.stuck)) {
     s.stuckT++;
     if (s.serveT > 0) s.serveT--;
-    else if (input.held("fire") || input.pressed("fire") || input.clicked() || s.stuckT > SERVE_AUTO) launch(s);
+    else if (s.caught ? input.pressed("fire") || input.clicked() || s.stuckT > CATCH_AUTO : input.held("fire") || input.pressed("fire") || input.clicked() || s.stuckT > SERVE_AUTO)
+      launch(s);
   }
   // X: send a spare ball up.
   if (input.pressed("alt") && s.reserve > 0 && aliveBalls(s) < MAX_BALLS) {
@@ -654,7 +819,8 @@ function play(s: State) {
   }
 
   bricks(s);
-  if (s.balls.some((b) => b.alive && !b.stuck)) s.speed = Math.min(MAX_SPEED, s.speed + SPEED_UP);
+  if (s.slow > 0) s.speed = Math.min(s.speed, SLOW_SPEED);
+  else if (s.balls.some((b) => b.alive && !b.stuck)) s.speed = Math.min(MAX_SPEED, s.speed + SPEED_UP);
   balls(s);
   bolts(s);
   drone(s);
@@ -667,12 +833,12 @@ function play(s: State) {
     popup(s, "LAST FILES: BALLS HOME IN", W / 2, 128, C.cyan);
     sfx(s, "beam");
   }
-  if (s.defeated >= s.foes.length) {
+  if (s.defeated >= s.levelEnd) {
     s.phase = "clear";
     s.phaseT = END_TICKS;
     s.bonus = s.lives * 250 + s.reserve * 100;
     s.score += s.bonus;
-    for (const c of s.capsules) spark(s, c.x, c.y + 5, 3, PERK_COLOR[s.friends[c.friend].perk]);
+    for (const c of s.capsules) spark(s, c.x, c.y + 5, 3, PICKUP_COLOR[c.pickup]);
     s.capsules.length = s.waves.length = s.bolts.length = 0;
     sfx(s, "chime");
     return;
@@ -686,7 +852,7 @@ function play(s: State) {
     } else {
       s.lives--;
       sfx(s, "hurt");
-      s.fire = s.rapid = s.paddle.shrink = 0;
+      s.fire = s.rapid = s.paddle.shrink = s.wide = s.catch = s.slow = 0;
       s.speed = BASE_SPEED;
       s.waves.length = 0;
       if (s.lives <= 0) {
@@ -703,7 +869,7 @@ function play(s: State) {
 function movePaddle(s: State) {
   const p = s.paddle;
   const { input } = s.ctx;
-  const w = p.shrink > 0 ? PADDLE_SHORT : PADDLE_W;
+  const w = p.shrink > 0 ? PADDLE_SHORT : s.wide > 0 ? PADDLE_WIDE : PADDLE_W;
   if (w !== p.w) {
     p.x += (p.w - w) / 2;
     p.w = w;
@@ -719,6 +885,7 @@ function movePaddle(s: State) {
 function holdStuck(s: State) {
   for (const b of s.balls)
     if (b.alive && b.stuck) {
+      b.off = clamp(b.off, -(s.paddle.w / 2 - 3), s.paddle.w / 2 - 3);
       b.x = paddleCenter(s) + b.off - BALL / 2;
       b.y = PADDLE_Y - BALL;
     }
@@ -833,6 +1000,19 @@ function bounceOffPaddle(s: State, b: Ball) {
   sfx(s, "bounce");
 }
 
+/** The catch paddle holds the ball where it landed until fire is pressed. */
+function catchBall(s: State, b: Ball) {
+  b.stuck = true;
+  b.off = b.x + BALL / 2 - paddleCenter(s);
+  b.vx = b.vy = 0;
+  b.y = PADDLE_Y - BALL;
+  s.caught = true;
+  s.stuckT = 0;
+  s.serveT = 0;
+  s.sinceTouch = 0;
+  sfx(s, "tom");
+}
+
 /** Keep the speed, and never let a ball fly nearly flat (no endless side-to-side loops). */
 function settle(s: State, b: Ball) {
   if (Math.abs(b.vx) > Math.abs(b.vy) * 2.6) b.vy = (b.vy < 0 ? -1 : 1) * (Math.abs(b.vx) / 2.6);
@@ -860,7 +1040,7 @@ function balls(s: State) {
     if (s.homing && b.vy < 0) home(s, b);
     settle(s, b);
     const steps = Math.ceil(s.speed / 1.5);
-    for (let k = 0; k < steps && b.alive; k++) {
+    for (let k = 0; k < steps && b.alive && !b.stuck; k++) {
       // x first
       const dx = b.vx / steps;
       b.x += dx;
@@ -910,7 +1090,11 @@ function balls(s: State) {
         }
       }
       const p = s.paddle;
-      if (b.vy > 0 && overlap(b.x, b.y, BALL, BALL, p.x, PADDLE_Y, p.w, PADDLE_H) && b.y + BALL - dy <= PADDLE_Y + 2) bounceOffPaddle(s, b);
+      if (b.vy > 0 && overlap(b.x, b.y, BALL, BALL, p.x, PADDLE_Y, p.w, PADDLE_H) && b.y + BALL - dy <= PADDLE_Y + 2) {
+        if (s.catch > 0) catchBall(s, b);
+        else bounceOffPaddle(s, b);
+        continue;
+      }
       if (s.armor > 0 && b.vy > 0 && b.y + BALL >= ARMOR_Y) {
         b.y = ARMOR_Y - BALL;
         b.vy = -Math.abs(b.vy);
@@ -918,6 +1102,7 @@ function balls(s: State) {
       }
       if (b.y > H) b.alive = false;
     }
+    if (b.stuck) continue;
     settle(s, b);
     if (fire && s.tick % 2 === 0) spark(s, b.x + BALL / 2, b.y + BALL / 2, 1, s.tick % 4 ? C.orange : C.yellow, 0.3);
   }
@@ -1004,13 +1189,14 @@ function capsules(s: State) {
     c.y += 0.9;
     if (overlap(c.x - 11, c.y, 22, 10, p.x, PADDLE_Y, p.w, PADDLE_H)) {
       c.alive = false;
-      const f = s.friends[c.friend];
-      const word = applyPerk(s, f);
-      s.collected++;
+      const f = c.friend >= 0 ? s.friends[c.friend] : null;
+      const word = f ? applyPerk(s, f) : applyPickup(s, c.pickup, 5);
+      if (f) s.collected++;
       s.score += 50;
-      popup(s, `${f.label} ${word}`, c.x, PADDLE_Y - 14, PERK_COLOR[f.perk]);
-      spark(s, c.x, PADDLE_Y, 8, PERK_COLOR[f.perk]);
-      sfx(s, f.perk === "points" ? "coin" : "powerup");
+      const color = PICKUP_COLOR[c.pickup];
+      popup(s, f ? `${f.label} ${word}` : word, c.x, PADDLE_Y - 14, color);
+      spark(s, c.x, PADDLE_Y, 8, color);
+      sfx(s, c.pickup === "points" ? "coin" : "powerup");
     } else if (c.y > H) c.alive = false;
   }
   compact(s.capsules);

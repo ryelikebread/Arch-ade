@@ -4,8 +4,8 @@
 // falls back to plain rectangles.
 
 import { drawText, textWidth } from "../../../pixel/font";
-import type { Perk } from "../../types";
-import { BRICK_H, C, H, LEFT, PADDLE_H, PADDLE_W, RIGHT, TOP, W } from "./logic";
+import type { Theme } from "./levels";
+import { BRICK_H, C, H, LEFT, PADDLE_H, PADDLE_W, PICKUP_LETTER, RIGHT, TOP, W, type Pickup } from "./logic";
 
 type Img = HTMLCanvasElement;
 
@@ -70,7 +70,7 @@ const FILE_MARK = ["#####...", "#...##..", "#....##.", "#.....#.", "#.##..#.", "
 /** A crumpled scrap: filler bricks that aren't files. */
 const JUNK = ["........", "..###...", ".#..##..", "#.##..#.", "#...#.##", "##.#..#.", ".#..##..", "..###..."];
 
-const PERK_SYM: Record<Perk, string[]> = {
+const PICKUP_SYM: Record<Pickup, string[]> = {
   health: ["##.##", "#####", "#####", ".###.", "..#.."],
   armor: [".....", "#####", "#.#.#", "#####", "....."],
   ally: ["..#..", ".###.", "#####", "#.#.#", "....."],
@@ -79,13 +79,15 @@ const PERK_SYM: Record<Perk, string[]> = {
   ammo: [".###.", "##.##", "#...#", "##.##", ".###."],
   power: ["..#..", ".##..", ".###.", "#####", ".###."],
   points: ["..#..", ".###.", "#####", ".###.", "..#.."],
+  wide: [".....", "#...#", "#####", "#...#", "....."],
+  catch: ["#...#", "#.#.#", "#...#", ".###.", "....."],
+  slow: ["#####", ".#.#.", "..#..", ".#.#.", "#####"],
 };
 
 export type FaceKind = "file" | "tank" | "wall" | "filler" | "white";
 
 /** All the pre-rendered art; created on the first draw. */
 export class Art {
-  readonly bg: Img | null;
   readonly ball: Img | null;
   readonly fireball: Img | null;
   readonly heart: Img | null;
@@ -102,11 +104,11 @@ export class Art {
   private cracks = new Map<number, Img | null>();
   private pipImgs = new Map<number, Img | null>();
   private syms = new Map<string, Img | null>();
-  private caps = new Map<Perk, Img | null>();
+  private caps = new Map<Pickup, Img | null>();
+  private bgs = new Map<string, Img | null>();
   private labels = new Map<string, Img | null>();
 
   constructor() {
-    this.bg = background();
     this.ball = paint(BALL, { o: C.cyan, O: C.ink });
     this.fireball = paint(BALL, { o: C.red, O: C.yellow });
     this.heart = paint(HEART, { "#": C.red });
@@ -116,6 +118,13 @@ export class Art {
     this.paddle = paddle(C.cyan, C.pink);
     this.paddleHurt = paddle(C.yellow, C.red);
     this.armorBar = armorBar();
+  }
+
+  /** A level theme's backdrop: walls, scenery and the HUD strip. */
+  background(theme: Theme): Img | null {
+    let img = this.bgs.get(theme.id);
+    if (img === undefined) this.bgs.set(theme.id, (img = background(theme)));
+    return img;
   }
 
   /** The well behind a kind icon (arcade icons are always light, so it's always dark). */
@@ -167,17 +176,17 @@ export class Art {
     return img;
   }
 
-  /** A perk's 5x5 symbol in a color. */
-  sym(perk: Perk, color: string): Img | null {
-    const key = `${perk}|${color}`;
+  /** A pickup's 5x5 symbol in a color. */
+  sym(pickup: Pickup, color: string): Img | null {
+    const key = `${pickup}|${color}`;
     let img = this.syms.get(key);
-    if (img === undefined) this.syms.set(key, (img = paint(PERK_SYM[perk], { "#": color })));
+    if (img === undefined) this.syms.set(key, (img = paint(PICKUP_SYM[pickup], { "#": color })));
     return img;
   }
 
-  /** A falling capsule: a pill in the perk's color with a well for the file icon. */
-  capsule(perk: Perk, color: string): Img | null {
-    let img = this.caps.get(perk);
+  /** A falling capsule: a pill in the pickup's color, its letter, and a well for the file icon (or the symbol, for drops). */
+  capsule(pickup: Pickup, color: string): Img | null {
+    let img = this.caps.get(pickup);
     if (img === undefined) {
       const s = surface(22, 10);
       if (s) {
@@ -193,10 +202,10 @@ export class Art {
         g.fillRect(20, 3, 1, 4);
         g.fillStyle = this.well(color);
         g.fillRect(3, 1, 8, 8);
-        const sym = paint(PERK_SYM[perk], { "#": DARK });
-        if (sym) g.drawImage(sym, 13, 2);
+        // the pickup's letter (every pill color is light enough for dark ink)
+        drawText(g, PICKUP_LETTER[pickup], 14, 2, DARK);
       }
-      this.caps.set(perk, (img = s?.c ?? null));
+      this.caps.set(pickup, (img = s?.c ?? null));
     }
     return img;
   }
@@ -222,32 +231,95 @@ export function makeArt(): Art | null {
 
 // ---------- painters ----------
 
-function background(): Img | null {
+/** Repeatable "random" numbers for scenery (the renderer never uses rng). */
+const hash = (n: number) => {
+  let x = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
+  x ^= x >>> 13;
+  x = Math.imul(x, 0xc2b2ae35);
+  return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+};
+
+function background(t: Theme): Img | null {
   const s = surface(W, H);
   if (!s) return null;
   const g = s.g;
-  g.fillStyle = C.bg;
-  g.fillRect(0, 0, W, H);
-  g.fillStyle = "#0e0820";
-  g.fillRect(0, 0, W, TOP - 2);
-  // faint dot grid
-  g.fillStyle = "#1b1233";
-  for (let y = TOP + 6; y < H; y += 12) for (let x = LEFT + 8; x < RIGHT; x += 12) g.fillRect(x, y, 1, 1);
+  const px = (x: number, y: number, w: number, h: number, c: string) => {
+    g.fillStyle = c;
+    g.fillRect(x, y, w, h);
+  };
+  px(0, 0, W, H, t.bg);
+  px(0, 0, W, TOP - 2, t.top);
+  const y0 = TOP + 2;
+  switch (t.scenery) {
+    case "grid":
+      // faint dot grid
+      for (let y = TOP + 6; y < H; y += 12) for (let x = LEFT + 8; x < RIGHT; x += 12) px(x, y, 1, 1, t.deco);
+      break;
+    case "windows":
+      // overlapping app windows, outlines only, with title bars
+      for (let i = 0; i < 7; i++) {
+        const w = 50 + Math.floor(hash(i * 3) * 60), h = 30 + Math.floor(hash(i * 3 + 1) * 40);
+        const x = LEFT + 6 + Math.floor(hash(i * 3 + 2) * (RIGHT - LEFT - w - 12));
+        const y = y0 + 4 + Math.floor(hash(i * 7 + 5) * (H - y0 - h - 10));
+        px(x, y, w, h, t.bg);
+        px(x, y, w, 1, t.deco2);
+        px(x, y + h - 1, w, 1, t.deco);
+        px(x, y, 1, h, t.deco);
+        px(x + w - 1, y, 1, h, t.deco);
+        px(x + 1, y + 1, w - 2, 4, t.deco);
+        for (let k = 0; k < 3; k++) px(x + w - 5 - k * 4, y + 2, 2, 2, t.deco2);
+      }
+      break;
+    case "racks":
+      // server racks with rows of status lights
+      for (let x = LEFT + 6; x < RIGHT - 20; x += 34) {
+        px(x, y0, 26, H - y0, t.deco);
+        for (let y = y0 + 4; y < H - 4; y += 7) {
+          px(x + 2, y, 22, 1, t.bg);
+          if (hash(x * 31 + y) < 0.5) px(x + 3 + Math.floor(hash(x + y * 17) * 3) * 6, y + 2, 1, 1, t.deco2);
+          if (hash(x * 7 + y * 3) < 0.25) px(x + 21, y + 2, 1, 1, "#7a5a1a");
+        }
+      }
+      break;
+    case "stars":
+      // stars, and a bank of clouds at the bottom
+      for (let i = 0; i < 70; i++) {
+        const x = LEFT + 2 + Math.floor(hash(i * 2) * (RIGHT - LEFT - 4)), y = y0 + Math.floor(hash(i * 2 + 1) * (H - y0 - 30));
+        px(x, y, 1, 1, hash(i + 500) < 0.25 ? t.deco2 : t.frame);
+      }
+      for (let i = 0; i < 9; i++) {
+        const cx = LEFT + i * 38 + Math.floor(hash(i + 90) * 12), r = 10 + Math.floor(hash(i + 70) * 8);
+        for (let dy = -r; dy <= r; dy++) {
+          const half = Math.floor(Math.sqrt(r * r - dy * dy) * 1.6);
+          px(Math.max(LEFT, cx - half), H - 6 + dy, half * 2, 1, t.deco);
+        }
+      }
+      break;
+    case "scraps":
+      // crumpled paper and bottle caps on the floor of the bin
+      for (let i = 0; i < 40; i++) {
+        const x = LEFT + 4 + Math.floor(hash(i * 5) * (RIGHT - LEFT - 12)), y = y0 + Math.floor(hash(i * 5 + 1) * (H - y0 - 8));
+        const w = 3 + Math.floor(hash(i * 5 + 2) * 5);
+        px(x, y + 1, w, 3, t.deco2);
+        px(x + 1, y, w - 2, 5, t.deco2);
+        px(x + 1, y + 2, w - 2, 1, t.deco);
+      }
+      // the bin's slats
+      for (let x = LEFT + 20; x < RIGHT; x += 40) px(x, y0, 1, H - y0, t.deco);
+      break;
+  }
   // walls: top rail and the two side pillars, with bolts
   const wall = (x: number, y: number, w: number, h: number) => {
-    g.fillStyle = "#3b2e63";
-    g.fillRect(x, y, w, h);
-    g.fillStyle = "#5c4b8f";
-    if (w > h) g.fillRect(x, y, w, 1);
-    else g.fillRect(x + 1, y, 1, h);
+    px(x, y, w, h, t.frame);
+    if (w > h) px(x, y, w, 1, t.frameHi);
+    else px(x + 1, y, 1, h, t.frameHi);
   };
   wall(0, TOP - 2, W, 2);
   wall(0, TOP - 2, LEFT, H);
   wall(RIGHT, TOP - 2, W - RIGHT, H);
-  g.fillStyle = C.lilac;
   for (let y = TOP + 8; y < H; y += 16) {
-    g.fillRect(1, y, 2, 2);
-    g.fillRect(RIGHT + 1, y, 2, 2);
+    px(1, y, 2, 2, t.bolt);
+    px(RIGHT + 1, y, 2, 2, t.bolt);
   }
   return s.c;
 }

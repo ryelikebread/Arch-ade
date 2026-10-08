@@ -6,9 +6,11 @@ import type { ArcadeFile, ArcadeRound, Cast, Friend, Perk } from "../../types";
 import { tagText } from "./draw";
 import { game, type BrickGame } from "./index";
 import {
-  ARMOR_Y, BALL, CELL, END_TICKS, H, LEFT, MAX_BALLS, MAX_ROWS, MIN_FOES, PADDLE_SHORT, PADDLE_W, PADDLE_Y, READY_TICKS, RIGHT,
-  aliveBalls, applyPerk, damage, hitsFor, isWide, jammed, step, visible, type Brick, type State,
+  ARMOR_Y, BALL, CATCH_AUTO, CELL, DROPS, END_TICKS, H, LEFT, MAX_BALLS, MAX_ROWS, MAX_SPEED, MIN_FOES, PADDLE_SHORT, PADDLE_W, PADDLE_WIDE, PADDLE_Y,
+  PICKUP_COLOR, PICKUP_LETTER, PICKUP_WORD, READY_TICKS, RIGHT, SLOW_SPEED,
+  aliveBalls, applyPerk, applyPickup, damage, hitsFor, isWide, jammed, startLevel, step, visible, type Brick, type Pickup, type State,
 } from "./logic";
+import { THEMES, inPattern, levelCount, levelFolder, levelTitle, type Pattern } from "./levels";
 
 const round = (...files: ArcadeFile[]): ArcadeRound => ({ source: "Plan", files });
 
@@ -96,16 +98,18 @@ describe("brick sort: files become bricks", () => {
     const rounds = [round(...videos(48)), round(...videos(36), ...notes(12)), round(...videos(24), ...photos(24)), round(...videos(20), ...notes(28))];
     for (const r of rounds)
       for (const seed of [1, 2, 3, 4, 5, 6]) {
-        const { t, s } = start(r, seed);
-        expect(s.rows).toBeLessThanOrEqual(MAX_ROWS);
-        expect(s.defeated).toBe(0); // nobody was left out of the wall
-        for (const foe of s.foes) expect(s.bricks.some((b) => b.foe === foe)).toBe(true);
-        const live = s.bricks.filter((b) => b.alive);
-        for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) expect(overlaps(live[i], live[j])).toBe(false);
-        expect(Math.max(...live.map((b) => b.y + b.h))).toBeLessThan(PADDLE_Y - 40);
-        // and the ball's serve spot under the wall is clear
-        t.run(READY_TICKS + 1);
-        for (const b of live) expect(b.y + b.h).toBeLessThan(s.balls[0].y - 40);
+        const { s } = start(r, seed);
+        for (let k = 0; k < s.levels; k++) {
+          if (k) startLevel(s, k);
+          expect(s.rows).toBeLessThanOrEqual(MAX_ROWS);
+          expect(s.defeated).toBe(0); // nobody was left out of the wall
+          for (const foe of s.foes.slice(s.levelStart, s.levelEnd)) expect(s.bricks.some((b) => b.foe === foe)).toBe(true);
+          const live = s.bricks.filter((b) => b.alive);
+          for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) expect(overlaps(live[i], live[j])).toBe(false);
+          expect(Math.max(...live.map((b) => b.y + b.h))).toBeLessThan(PADDLE_Y - 40);
+          // and the ball's serve spot under the wall is clear
+          for (const b of live) expect(b.y + b.h).toBeLessThan(s.balls[0].y - 40);
+        }
       }
   });
 
@@ -345,14 +349,131 @@ describe("brick sort: perks", () => {
     expect(g.s.bolts.length).toBeGreaterThan(0);
   });
 
-  it("spread is multiball", () => {
+  it("spread is multiball: every ball splits into three", () => {
     const g = playing();
     g.t.run(5, ["fire"]);
     expect(aliveBalls(g.s)).toBe(1);
-    applyPerk(g.s, friend("spread", 8));
-    expect(aliveBalls(g.s)).toBe(4);
-    for (let i = 0; i < 5; i++) applyPerk(g.s, friend("spread", 10));
-    expect(aliveBalls(g.s)).toBe(MAX_BALLS);
+    applyPerk(g.s, friend("spread", 2));
+    expect(aliveBalls(g.s)).toBe(3);
+    applyPerk(g.s, friend("spread", 10));
+    expect(aliveBalls(g.s)).toBe(MAX_BALLS); // 9, capped
+    // the new balls fly up, at different angles
+    const flying = g.s.balls.filter((b) => b.alive);
+    expect(new Set(flying.map((b) => b.vx.toFixed(3))).size).toBeGreaterThan(2);
+  });
+
+  it("multiball while the ball is on the paddle launches it and splits it", () => {
+    const { s } = playing();
+    expect(s.balls.filter((b) => b.alive && b.stuck).length).toBe(1);
+    applyPickup(s, "spread", 5);
+    expect(aliveBalls(s)).toBe(3);
+    expect(s.balls.every((b) => !b.stuck)).toBe(true);
+  });
+
+  it("the round goes on until the last ball is lost", () => {
+    const { t, s } = playing();
+    t.run(3, ["fire"]);
+    applyPickup(s, "spread", 5);
+    const live = s.balls.filter((b) => b.alive);
+    live[0].y = live[1].y = H + 10;
+    t.run(1);
+    expect(aliveBalls(s)).toBe(1);
+    expect(s.lives).toBe(3);
+    live[2].y = H + 10;
+    live[2].vy = 2;
+    t.run(1);
+    expect(s.lives).toBe(2);
+    expect(s.balls.filter((b) => b.alive && b.stuck).length).toBe(1); // a fresh serve
+  });
+
+  it("wide makes the paddle longer for a while, and a miss ends it", () => {
+    const { t, s } = playing();
+    expect(applyPickup(s, "wide", 5)).toBe("WIDE PADDLE");
+    t.run(1);
+    expect(s.paddle.w).toBe(PADDLE_WIDE);
+    t.run(s.wide + 1);
+    expect(s.paddle.w).toBe(PADDLE_W);
+    applyPickup(s, "wide", 5);
+    t.run(3, ["fire"]);
+    for (const b of s.balls) b.y = H + 10;
+    t.run(2);
+    expect(s.wide).toBe(0);
+    expect(s.paddle.w).toBe(PADDLE_W);
+  });
+
+  it("catch holds a ball that lands on the paddle until fire is pressed again", () => {
+    const { t, s } = playing();
+    t.run(3, ["fire"]);
+    applyPickup(s, "catch", 5);
+    const b = s.balls.find((x) => x.alive)!;
+    b.x = s.paddle.x + s.paddle.w - 10;
+    b.y = PADDLE_Y - BALL - 1;
+    b.vx = 0;
+    b.vy = 2;
+    t.run(2, ["fire"]); // held from before: doesn't let go
+    expect(b.stuck).toBe(true);
+    expect(s.caught).toBe(true);
+    const off = b.off;
+    expect(off).toBeGreaterThan(5);
+    t.run(20, ["right"]);
+    expect(b.stuck).toBe(true);
+    expect(b.x + BALL / 2 - (s.paddle.x + s.paddle.w / 2)).toBeCloseTo(off, 5); // rides along
+    t.run(1, ["fire"]); // a fresh press
+    expect(b.stuck).toBe(false);
+    expect(b.vx).toBeGreaterThan(0); // caught right of center: goes right
+    expect(b.vy).toBeLessThan(0);
+    // left alone, a caught ball lets go by itself
+    b.x = s.paddle.x + 10;
+    b.y = PADDLE_Y - BALL - 1;
+    b.vx = 0;
+    b.vy = 2;
+    t.run(2);
+    expect(b.stuck).toBe(true);
+    t.run(CATCH_AUTO + 2);
+    expect(b.stuck).toBe(false);
+  });
+
+  it("slow brings the ball speed down and holds it there", () => {
+    const { t, s } = playing();
+    t.run(3, ["fire"]);
+    s.speed = MAX_SPEED;
+    applyPickup(s, "slow", 5);
+    expect(s.speed).toBeLessThanOrEqual(SLOW_SPEED);
+    t.run(60);
+    expect(s.speed).toBeLessThanOrEqual(SLOW_SPEED);
+    const b = s.balls.find((x) => x.alive && !x.stuck);
+    if (b) expect(Math.hypot(b.vx, b.vy)).toBeCloseTo(s.speed, 3);
+  });
+
+  it("every pickup has its own letter, color and word", () => {
+    const all = Object.keys(PICKUP_LETTER) as Pickup[];
+    expect(all.length).toBe(11);
+    expect(new Set(all.map((p) => PICKUP_LETTER[p])).size).toBe(all.length);
+    expect(new Set(all.map((p) => PICKUP_COLOR[p])).size).toBe(all.length);
+    for (const p of all) expect(PICKUP_WORD[p].length).toBeGreaterThan(0);
+    for (const p of DROPS) expect(all).toContain(p);
+  });
+
+  it("each level hides a multiball and another drop in plain bricks; drops aren't counted as friends", () => {
+    for (const seed of [1, 2, 3]) {
+      const { s } = playing(sampleRound(), seed);
+      const hosts = s.bricks.filter((b) => b.drops.length);
+      const drops = hosts.flatMap((b) => b.drops);
+      expect(drops).toContain("spread");
+      expect(drops.length).toBe(2);
+      expect(new Set(drops).size).toBe(2);
+      for (const h of hosts) expect(h.capsules.length).toBe(0);
+      const host = hosts.find((b) => b.drops.includes("spread"))!;
+      damage(s, host, host.hits + host.shield);
+      const c = s.capsules.find((x) => x.friend === -1 && x.pickup === "spread")!;
+      expect(c).toBeTruthy();
+      c.x = s.paddle.x + s.paddle.w / 2;
+      c.y = PADDLE_Y - 6;
+      ticks(s, 3);
+      expect(s.collected).toBe(0);
+      expect(aliveBalls(s)).toBe(3);
+      expect(s.popups.some((p) => p.text === "MULTIBALL")).toBe(true);
+    }
   });
 
   it("ammo stores spare balls: X launches one, and a lost ball is replaced without losing a life", () => {
@@ -400,7 +521,7 @@ describe("brick sort: perks", () => {
       const { s } = playing({ foes: [], friends: [long], benched: 0 });
       s.paddle.x = side;
       s.paddle.lastPointer = null;
-      s.capsules.push({ x: side === LEFT ? LEFT + 2 : RIGHT - 2, y: PADDLE_Y - 8, friend: 0, alive: true });
+      s.capsules.push({ x: side === LEFT ? LEFT + 2 : RIGHT - 2, y: PADDLE_Y - 8, friend: 0, pickup: "ammo", alive: true });
       ticks(s, 6, true);
       const p = s.popups.find((x) => x.text.startsWith("A-VERY-LO."))!;
       expect(p).toBeTruthy();
@@ -423,6 +544,137 @@ describe("brick sort: perks", () => {
     c.y = PADDLE_Y - 12;
     ticks(s, 20, true);
     expect(s.collected).toBeGreaterThan(0);
+  });
+});
+
+describe("brick sort: levels", () => {
+  const many = (n: number) =>
+    round(...Array.from({ length: n }, (_, i) => ({ ...file(`f${i}.bin`, (["image", "pdf", "text", "audio", "archive", "unknown"] as const)[i % 6], 2000 * 3 ** (i % 7), i % 4 ? "trashed" : "kept"), folder: ["Downloads", "Desktop", "Old Projects Archive 2019"][i % 3] })));
+
+  it("small rounds are one level; bigger ones are split into up to three", () => {
+    expect(levelCount(12)).toBe(1);
+    expect(levelCount(23)).toBe(1);
+    expect(levelCount(24)).toBe(2);
+    expect(levelCount(48)).toBe(3);
+    const { s } = start(many(64)); // 48 foes
+    expect(s.levels).toBe(3);
+    expect([s.levelStart, s.levelEnd]).toEqual([0, 16]);
+  });
+
+  it("level titles come from the round's folders, cycling, cut to fit", () => {
+    expect(levelTitle(["Downloads"], 1)).toBe("LEVEL 2 - DOWNLOADS");
+    expect(levelTitle(["a", "b"], 2)).toBe("LEVEL 3 - A");
+    expect(levelFolder(["Old Projects Archive 2019"], 0)).toBe("OLD PROJECTS .");
+    const { s } = start();
+    expect(s.title).toBe("LEVEL 1 - DOWNLOADS");
+  });
+
+  it("clearing a level builds the next one with a new theme; the round is won after the last", () => {
+    for (const seed of [1, 2, 3, 4]) {
+      const { t, s } = playing(many(64), seed);
+      const titles = [s.title];
+      const themes = [s.theme];
+      for (let k = 0; k < s.levels; k++) {
+        expect(s.level).toBe(k);
+        for (let guard = 0; guard < 50; guard++) {
+          const left = s.bricks.filter((b) => b.alive && b.foe);
+          if (!left.length) break;
+          for (const b of left) damage(s, b, 99);
+        }
+        t.run(1);
+        expect(s.phase).toBe("clear");
+        s.lives = 2;
+        t.run(END_TICKS + 1);
+        if (k + 1 < s.levels) {
+          expect(t.result()).toBeNull();
+          expect(s.phase).toBe("ready");
+          expect(s.lives).toBe(2); // lives carry over
+          expect(s.bricks.filter((b) => b.foe).every((b) => b.ref >= s.levelStart && b.ref < s.levelEnd)).toBe(true);
+          titles.push(s.title);
+          themes.push(s.theme);
+          t.run(READY_TICKS + 1);
+        }
+      }
+      const r = t.result()!;
+      expect(r.won).toBe(true);
+      expect(r.defeated).toBe(48);
+      expect(titles).toEqual(["LEVEL 1 - DOWNLOADS", "LEVEL 2 - DESKTOP", "LEVEL 3 - OLD PROJECTS ."]);
+      for (let i = 1; i < themes.length; i++) expect(themes[i]).not.toBe(themes[i - 1]);
+    }
+  });
+
+  it("levels pick from at least four themes, each with its own colors and shapes", () => {
+    expect(THEMES.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(THEMES.map((t) => t.bg)).size).toBe(THEMES.length);
+    expect(new Set(THEMES.map((t) => t.scenery)).size).toBe(THEMES.length);
+    expect(new Set(THEMES.flatMap((t) => t.patterns)).size).toBeGreaterThanOrEqual(5);
+    const seen = new Set<number>();
+    for (let seed = 1; seed <= 30; seed++) seen.add(start(sampleRound(), seed).s.theme);
+    expect(seen.size).toBe(THEMES.length);
+  });
+
+  it("the shapes look like their names", () => {
+    const row = (p: Pattern, r: number, rows = 6) => Array.from({ length: 13 }, (_, c) => inPattern(p, r, c, rows, 13)).filter(Boolean).length;
+    expect(row("pyramid", 0)).toBeLessThan(row("pyramid", 5));
+    expect(row("pyramid", 5)).toBe(13);
+    expect(row("diamond", 0)).toBeLessThan(row("diamond", 3));
+    expect(row("diamond", 5)).toBeLessThan(row("diamond", 2));
+    expect(row("gaps", 2)).toBe(0);
+    expect(row("full", 3)).toBe(13);
+    expect(inPattern("checker", 0, 0, 6, 13)).not.toBe(inPattern("checker", 0, 2, 6, 13));
+    expect(inPattern("checker", 0, 0, 6, 13)).toBe(inPattern("checker", 0, 1, 6, 13)); // two-cell squares
+  });
+
+  it("every theme and shape gives a fair wall: every foe placed, no overlaps, above the paddle", () => {
+    const rounds = [sampleRound(), many(40), many(64), round(...Array.from({ length: 23 }, (_, i) => file(`v${i}.mov`, "video", 50_000_000, "trashed")))];
+    for (const r of rounds)
+      for (let theme = 0; theme < THEMES.length; theme++)
+        for (const pattern of ["full", "pyramid", "gaps", "checker", "diamond", "towers"] as Pattern[]) {
+          const { s } = start(r, theme + 1);
+          startLevel(s, 0, { theme, pattern });
+          expect(s.defeated).toBe(0);
+          for (const foe of s.foes.slice(s.levelStart, s.levelEnd)) expect(s.bricks.some((b) => b.foe === foe)).toBe(true);
+          const live = s.bricks.filter((b) => b.alive);
+          for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) expect(overlaps(live[i], live[j])).toBe(false);
+          expect(Math.max(...live.map((b) => b.y + b.h))).toBeLessThan(PADDLE_Y - 40);
+          for (const b of live) expect(b.x >= LEFT && b.x + b.w <= RIGHT).toBe(true);
+        }
+  });
+
+  it("different shapes give different walls", () => {
+    const { s } = start(sampleRound());
+    const walls = new Set<string>();
+    for (const pattern of ["full", "pyramid", "gaps", "checker", "diamond", "towers"] as Pattern[]) {
+      startLevel(s, 0, { theme: 0, pattern });
+      const cells = s.bricks.map((b) => `${b.x},${b.y}`).sort().join(" ");
+      walls.add(cells);
+      if (pattern !== "full") expect(s.bricks.length).toBeLessThan(13 * s.rows);
+    }
+    expect(walls.size).toBe(6);
+  });
+
+  it("the READY screen shows the level title and theme; the HUD keeps the title", () => {
+    const texts: string[] = [];
+    const { t, s } = start();
+    t.ctx.text = (str) => void texts.push(str);
+    t.game.draw();
+    expect(texts).toContain(s.title);
+    expect(texts).toContain(THEMES[s.theme].name);
+  });
+
+  it("a tracking player wins a two-level round", () => {
+    const { t, s } = start(many(36), 2);
+    expect(s.levels).toBe(2);
+    for (let i = 0; i < 30 * 600 && !t.result(); i++) {
+      const b = s.balls.filter((x) => x.alive).sort((a, c) => c.y + (c.vy > 0 ? 50 : 0) - (a.y + (a.vy > 0 ? 50 : 0)))[0];
+      const target = (b ? b.x + 2 : s.paddle.x + s.paddle.w / 2) + ((i >> 7) & 1 ? 7 : -7);
+      const cx = s.paddle.x + s.paddle.w / 2;
+      t.run(1, target > cx + 2 ? ["fire", "right"] : target < cx - 2 ? ["fire", "left"] : ["fire"]);
+    }
+    const r = t.result()!;
+    expect(r).not.toBeNull();
+    expect(r.won).toBe(true);
+    expect(r.defeated).toBe(r.foes);
   });
 });
 
