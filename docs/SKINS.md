@@ -46,11 +46,13 @@ The built-in skins are good examples: `src/skins/builtin/volcano/manifest.json` 
 | `id` | Lowercase letters, digits and `-`. Must not clash with another skin. |
 | `size` | Stage size in pixels (32..640 by 32..360). It's scaled up by whole numbers, pixelated. |
 | `bands` | Optional background: horizontal color stripes from each `y` down to the next. |
-| `scene` | Sprites always drawn under everything; with `fps`, multi-frame ones animate slowly. |
+| `scene` | Sprites always drawn under everything; with `fps`, multi-frame ones animate slowly. A scene sprite can also change as decisions add up, see [Scene that changes](#scene-that-changes). |
 | `file` | Where the current file's icon (16x16) waits for a decision. |
 | `sprites` | Rectangles on the sheet. `frames` copies sit side by side, left to right. `file` is reserved. |
 | `sounds` | Optional sound effects per decision, see below. |
 | `animations` | One per decision: `keep`, `move`, `rename`, `trash` are required; `delete` is optional and falls back to `trash`. Duration is 100..10000 ms. |
+| `variants` | Optional extra animations per decision; each time, one of the main animation and its variants is picked at random. See [Variants](#variants). |
+| `music` | Optional id of a built-in song to play while this skin is on (it replaces the chosen built-in station; My Music is left alone). |
 
 ## Tracks
 
@@ -87,6 +89,37 @@ sprite or a caption:
 The effects are built into Arch-ade (made in `src/audio/sfx.ts`): `blip`, `pop`, `chime`,
 `whoosh`, `sizzle`, `rumble`, `tom`, `tomHi`, `horn`, `splash`, `launch`, `explosion`,
 `beam`, `jingle`. Try them with **Sound test** in the Sound menu. Up to 16 per decision.
+
+An animation (or a variant) can carry its own `sounds` list, which then replaces the
+skin's `sounds` for that decision. Skins can also add their own effects to Arch-ade by
+dropping a file in `src/audio/effects/` (built-in skins only).
+
+## Variants
+
+```json
+"variants": {
+  "trash": [{ "duration": 1800, "tracks": [], "sounds": [{ "sfx": "creak", "at": 0.3 }] }]
+}
+```
+
+Up to 8 per decision. Royal Court uses this so a trashed file is either walked to the
+dungeon by the guards or dropped through the king's trap door.
+
+## Scene that changes
+
+A `scene` sprite with `tally` switches to the next sprite in its list each time one of the
+listed decisions happens, and stays on the last one. Undo steps it back.
+
+```json
+{ "sprite": "pot", "x": 60, "y": 50, "tally": { "on": ["keep"], "sprites": ["pot1", "pot2", "pot3"] } }
+```
+
+Up to 16 sprites. Peasoup's soup pot fills up over six stages as files are kept.
+
+## Undo
+
+When you undo a decision in File by File, its animation plays backwards at double speed with
+a rewind sound. Skins don't need to do anything for this.
 
 ## Art
 

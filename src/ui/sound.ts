@@ -123,7 +123,7 @@ export function soundMenu() {
       notes.push(`Add your own .mp3, .m4a, .ogg, .wav or .flac files to the music folder (Show opens it), then reopen this menu.`);
       notes.push(...sound.my.problems.map((p) => `Skipped: ${p}`));
     } else notes.push("Built-in stations are original chiptune made for Arch-ade.");
-    notes.push("Sound effects play in the Volcano and Space skins of File by File.");
+    notes.push("Sound effects play with the File by File skins (all but Minimal).");
     info.replaceChildren(...notes.map((n) => h("p", { class: n.startsWith("Skipped") ? "bad" : "" }, n)));
   }
 
