@@ -7,9 +7,12 @@ import type { Kind } from "../../../types";
 import { filler } from "../../round";
 import type { Ability, Cast, Foe, Friend, GameResult, Input, Perk } from "../../types";
 import { buildMaze, isWall, reach, type Maze } from "./maze";
+import { levelsFor, levelTitle, pickTheme, type Theme } from "./themes";
 
 export const READY_TICKS = 45;
 export const END_TICKS = 45;
+/** The pause after a floor is cleaned, before the next one loads. */
+export const CLEAR_TICKS = 50;
 /** Fewer foes than this and filler zombies join so the maze isn't empty. */
 export const MIN_ZOMBIES = 10;
 /** On the map at once, split minis included. */
@@ -24,14 +27,17 @@ export const HUNT_AT = 3;
 const PLAYER_R = 0.22;
 const MOVE = 0.1;
 const TURN = 0.075;
+/** Mouse turning: radians per screen pixel, and at most this much a tick. */
+export const MOUSE_TURN = 0.004;
+export const MOUSE_MAX = 0.35;
 const AIM_ASSIST = 0.12;
 export const SPREAD_RAYS = [-0.075, 0, 0.075];
 const CENTER_RAY = [0];
 /** Hits from within this angle of where a shield zombie faces land on its shield. */
 const SHIELD_ARC = 1.35;
 
-export type Phase = "ready" | "play" | "won" | "lost" | "done";
-export type Tone = Perk | "info" | "warn";
+export type Phase = "ready" | "play" | "clear" | "won" | "lost" | "done";
+export type Tone = Perk | "info" | "warn" | "beam" | "bounce" | "burst";
 export type FxType = "puff" | "boom" | "spark" | "warp" | "zap" | "shard";
 
 export interface Player {
@@ -43,10 +49,13 @@ export interface Player {
   ammo: number;
   cd: number;
   recoil: number;
-  /** Ticks left of each timed power. */
+  /** Ticks left of rapid fire. */
   rapid: number;
-  spread: number;
-  power: number;
+  /** The weapon in hand, and shots left in it (the basic stapler has no limit, only staples). */
+  gun: GunMode;
+  gunLeft: number;
+  /** Shots it had when full, for the HUD's bar. */
+  gunMax: number;
   /** Ticks of red flash after a hit; ticks of no damage after a hit. */
   hurt: number;
   inv: number;
@@ -99,10 +108,26 @@ export interface Zombie {
 }
 
 export interface Pickup {
-  friend: Friend;
+  /** The kept file it came from; null for a weapon a zombie dropped. */
+  friend: Friend | null;
+  /** The weapon it holds (weapon perks, and drops). */
+  gun: GunMode | null;
   x: number;
   y: number;
   taken: boolean;
+}
+
+/** Scenery: lies on the floor, doesn't block. `kind` picks one of the theme's two props. */
+export interface Prop {
+  x: number;
+  y: number;
+  kind: 0 | 1;
+}
+
+/** One floor of the maze: its zombies and pickups, placed when it loads. */
+export interface Level {
+  zombies: Zombie[];
+  pickups: Pickup[];
 }
 
 export interface Ally {
@@ -140,6 +165,13 @@ export interface Fx {
 export interface World {
   rng: () => number;
   maze: Maze;
+  /** Every floor, the one being played, its title and theme. */
+  levels: Level[];
+  level: number;
+  title: string;
+  theme: Theme;
+  folders: string[];
+  props: Prop[];
   tick: number;
   phase: Phase;
   phaseT: number;
@@ -169,6 +201,8 @@ export interface World {
   flow: Int16Array;
   flowCell: number;
   queue: Int32Array;
+  /** The mouse button is firing (it went down while the mouse was captured). */
+  trigger: boolean;
   sounds: SfxName[];
   lastSfx: Map<SfxName, number>;
   nextId: number;
@@ -252,23 +286,87 @@ export function startAmmo(zombies: Zombie[]): number {
 /** Staples a beaten zombie gives back: about a third of what it took. */
 export const lootFor = (z: Zombie) => (z.mini || !z.counts ? 0 : 1 + Math.ceil((z.maxHp + z.shieldMax) / 3));
 
-export function createWorld(cast: Cast, rng: () => number): World {
+/** Which weapon a weapon perk gives: the video family's are spread-type guns, the installers' heavy ones. */
+const PERK_GUNS: Partial<Record<Perk, GunMode[]>> = { spread: ["spread", "burst", "bounce"], power: ["power", "beam"] };
+
+const NO_MAZE: Maze = { w: 1, h: 1, cells: new Uint8Array(1), rooms: [], start: { x: 0.5, y: 0.5 } };
+
+export function createWorld(cast: Cast, rng: () => number, folders: string[] = []): World {
   const foes = cast.foes.slice(0, 48);
   const files = foes.length;
   if (foes.length < MIN_ZOMBIES) foes.push(...filler(MIN_ZOMBIES - foes.length, rng));
   const friends = cast.friends.slice(0, 32);
-  const maze = buildMaze(rng, foes.length, friends.length);
+  const all = foes.map((foe, i) => makeZombie(i, foe, 0.5, 0.5, rng() * Math.PI * 2, rng));
+
+  // Big rounds are spread over a few floors, each a mix of everything.
+  const count = levelsFor(all.length);
+  const levels: Level[] = Array.from({ length: count }, () => ({ zombies: [], pickups: [] }));
+  all.forEach((z, i) => levels[i % count].zombies.push(z));
+  friends.forEach((friend, i) => {
+    const guns = PERK_GUNS[friend.perk];
+    const gun = guns ? guns[Math.floor(rng() * guns.length)] : null;
+    levels[i % count].pickups.push({ friend, gun, x: 0, y: 0, taken: false });
+  });
+
+  const w: World = {
+    rng,
+    maze: NO_MAZE,
+    levels,
+    level: -1,
+    title: "",
+    theme: pickTheme(rng, null),
+    folders,
+    props: [],
+    tick: 0,
+    phase: "ready",
+    phaseT: READY_TICKS,
+    won: false,
+    player: { x: 0.5, y: 0.5, a: 0, hp: 100, armor: 0, ammo: startAmmo(all), cd: 0, recoil: 0, rapid: 0, gun: "basic", gunLeft: 0, gunMax: 0, hurt: 0, inv: 0, glow: 0, walk: 0, moving: false },
+    zombies: [],
+    pickups: [],
+    allies: [],
+    waves: [],
+    fx: [],
+    score: 0,
+    defeated: 0,
+    foes: foes.length,
+    files,
+    crowd: Math.max(0.7, Math.min(1, 24 / foes.length)),
+    collected: 0,
+    alive: 0,
+    hunting: false,
+    msg: { text: "", tone: "info", t: 0 },
+    target: null,
+    shots: 0,
+    lastRays: 0,
+    flow: new Int16Array(1),
+    flowCell: -1,
+    queue: new Int32Array(1),
+    trigger: false,
+    sounds: [],
+    lastSfx: new Map(),
+    nextId: all.length,
+  };
+  enterLevel(w, 0, w.theme);
+  return w;
+}
+
+/** Build floor `i` in a theme (a random one but the last, if not given), place everyone, and get READY. */
+export function enterLevel(w: World, i: number, theme = pickTheme(w.rng, w.theme)) {
+  const rng = w.rng;
+  const lv = w.levels[i];
+  const maze = buildMaze(rng, lv.zombies.length, lv.pickups.length, theme.layout);
   const sx = Math.floor(maze.start.x);
   const sy = Math.floor(maze.start.y);
   const fromStart = reach(maze, sx, sy);
 
   // Zombies start well away from the player (relaxing that if the maze is tight).
   const floor: number[] = [];
-  for (let i = 0; i < fromStart.length; i++) if (fromStart[i] >= 1) floor.push(i);
+  for (let k = 0; k < fromStart.length; k++) if (fromStart[k] >= 1) floor.push(k);
   let far: number[] = [];
   for (const min of [9, 6, 3, 1]) {
-    far = floor.filter((i) => fromStart[i] >= min);
-    if (far.length >= foes.length) break;
+    far = floor.filter((k) => fromStart[k] >= min);
+    if (far.length >= lv.zombies.length) break;
   }
   shuffle(far, rng);
   const used = new Set<number>();
@@ -276,23 +374,34 @@ export function createWorld(cast: Cast, rng: () => number): World {
     x: (cell % maze.w) + 0.5 + (k > 0 ? (rng() - 0.5) * 0.4 : 0),
     y: Math.floor(cell / maze.w) + 0.5 + (k > 0 ? (rng() - 0.5) * 0.4 : 0),
   });
-  const zombies = foes.map((foe, i) => {
-    const cell = far.length ? far[i % far.length] : sy * maze.w + sx;
+  lv.zombies.forEach((z, k) => {
+    const cell = far.length ? far[k % far.length] : sy * maze.w + sx;
     used.add(cell);
-    const p = at(cell, Math.floor(i / Math.max(1, far.length)));
-    return makeZombie(i, foe, p.x, p.y, rng() * Math.PI * 2, rng);
+    Object.assign(z, at(cell, Math.floor(k / Math.max(1, far.length))));
   });
 
   // Pickups anywhere but the start cell, one per cell where possible.
   const spots = shuffle(
-    floor.filter((i) => fromStart[i] >= 2 && !used.has(i)),
+    floor.filter((k) => fromStart[k] >= 2 && !used.has(k)),
     rng,
   );
-  const pickups: Pickup[] = friends.map((friend, i) => {
-    const cell = spots.length ? spots[i % spots.length] : sy * maze.w + sx;
-    const p = at(cell, Math.floor(i / Math.max(1, spots.length)));
-    return { friend, x: p.x, y: p.y, taken: false };
+  lv.pickups.forEach((pk, k) => {
+    const cell = spots.length ? spots[k % spots.length] : sy * maze.w + sx;
+    Object.assign(pk, at(cell, Math.floor(k / Math.max(1, spots.length))));
   });
+
+  // Props by the room walls, out of the start room.
+  const props: Prop[] = [];
+  for (const r of maze.rooms.slice(1)) {
+    const n = Math.round(theme.density + rng() * theme.density);
+    for (let k = 0; k < n; k++) {
+      const edge = Math.floor(rng() * 4);
+      const along = rng();
+      const x = edge === 0 ? r.x + 0.3 : edge === 1 ? r.x + r.w - 0.3 : r.x + 0.5 + along * (r.w - 1);
+      const y = edge === 2 ? r.y + 0.3 : edge === 3 ? r.y + r.h - 0.3 : r.y + 0.5 + along * (r.h - 1);
+      if (!isWall(maze, x, y)) props.push({ x, y, kind: rng() < 0.5 ? 0 : 1 });
+    }
+  }
 
   // Face down the longest open line from the start.
   let a = 0;
@@ -303,38 +412,28 @@ export function createWorld(cast: Cast, rng: () => number): World {
   }
 
   const n = maze.w * maze.h;
-  return {
-    rng,
+  const p = w.player;
+  Object.assign(p, { x: maze.start.x, y: maze.start.y, a, cd: 0, recoil: 0, inv: 0 });
+  for (const ally of w.allies) ((ally.x = p.x), (ally.y = p.y));
+  Object.assign(w, {
     maze,
-    tick: 0,
+    level: i,
+    title: levelTitle(i, w.folders),
+    theme,
+    props,
     phase: "ready",
     phaseT: READY_TICKS,
-    won: false,
-    player: { x: maze.start.x, y: maze.start.y, a, hp: 100, armor: 0, ammo: startAmmo(zombies), cd: 0, recoil: 0, rapid: 0, spread: 0, power: 0, hurt: 0, inv: 0, glow: 0, walk: 0, moving: false },
-    zombies,
-    pickups,
-    allies: [],
+    zombies: lv.zombies,
+    pickups: lv.pickups,
     waves: [],
     fx: [],
-    score: 0,
-    defeated: 0,
-    foes: foes.length,
-    files,
-    crowd: Math.max(0.7, Math.min(1, 24 / foes.length)),
-    collected: 0,
-    alive: zombies.length,
+    alive: lv.zombies.length,
     hunting: false,
-    msg: { text: "", tone: "info", t: 0 },
     target: null,
-    shots: 0,
-    lastRays: 0,
     flow: new Int16Array(n),
     flowCell: -1,
     queue: new Int32Array(n),
-    sounds: [],
-    lastSfx: new Map(),
-    nextId: zombies.length,
-  };
+  });
 }
 
 // ---------- geometry ----------
@@ -428,8 +527,43 @@ export function cloak(z: Zombie): 0 | 1 | 2 {
   return 2;
 }
 
-export type GunMode = "basic" | "spread" | "power";
-export const gunOf = (p: Player): GunMode => (p.power > 0 ? "power" : p.spread > 0 ? "spread" : "basic");
+/**
+ * The weapons. The staple blaster is always there; the rest come from
+ * kept files and zombie drops, hold a number of shots, and when they run
+ * dry you're back to staples.
+ * - spread: three staples in a fan
+ * - power: a slow splash shot that hurts a crowd
+ * - beam: pierces every zombie in a line (shields still block it)
+ * - bounce: a staple that ricochets off walls, round corners
+ * - burst: a short-range blast of seven staples
+ */
+export type GunMode = "basic" | "spread" | "power" | "beam" | "bounce" | "burst";
+export const SPECIAL_GUNS: GunMode[] = ["spread", "power", "beam", "bounce", "burst"];
+export const GUN: Record<GunMode, { name: string; short: string; cd: number; shots: (power: number) => number }> = {
+  basic: { name: "STAPLE BLASTER", short: "STAPLER", cd: 8, shots: () => 0 },
+  spread: { name: "FAN STAPLER", short: "FAN", cd: 10, shots: (n) => 16 + n * 4 },
+  power: { name: "SPLASH CANNON", short: "SPLASH", cd: 14, shots: (n) => 8 + n * 2 },
+  beam: { name: "DEFRAG BEAM", short: "BEAM", cd: 15, shots: (n) => 8 + n * 2 },
+  bounce: { name: "RICOCHET", short: "RICOCHET", cd: 9, shots: (n) => 16 + n * 4 },
+  burst: { name: "SHREDDER", short: "SHREDDER", cd: 16, shots: (n) => 10 + n * 2 },
+};
+export const MAX_GUN_SHOTS = 99;
+export const gunOf = (p: Player): GunMode => p.gun;
+export const BURST_RAYS = [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3];
+export const BURST_RANGE = 3.2;
+export const BOUNCES = 3;
+/** Zombie drops: at most this many lying around a floor at once. */
+const MAX_DROPS = 3;
+
+/** Take up a weapon: the same one again adds shots, another one replaces what's in hand. */
+export function arm(w: World, gun: GunMode, shots: number) {
+  const p = w.player;
+  if (gun === "basic") return;
+  const same = p.gun === gun;
+  p.gunLeft = Math.min(MAX_GUN_SHOTS, (same ? p.gunLeft : 0) + shots);
+  p.gunMax = Math.max(p.gunLeft, same ? p.gunMax : 0);
+  p.gun = gun;
+}
 
 // ---------- damage ----------
 
@@ -490,6 +624,9 @@ function kill(w: World, z: Zombie) {
   play(w, "sizzle");
   addFx(w, "puff", z.x, z.y, z.height * 0.4, z.height * 0.7, 16, z.elite ? "#ffd23f" : "#a8c49a");
   if (z.mini) return;
+  // Now and then a file zombie drops a weapon (elites more often).
+  if (z.kind !== null && w.rng() < (z.elite ? 0.35 : 0.1) && w.pickups.filter((pk) => !pk.taken && !pk.friend).length < MAX_DROPS)
+    w.pickups.push({ friend: null, gun: SPECIAL_GUNS[Math.floor(w.rng() * SPECIAL_GUNS.length)], x: z.x, y: z.y, taken: false });
   if (z.ability === "split") split(w, z);
   if (z.ability === "tank") burst(w, z);
 }
@@ -555,8 +692,8 @@ export function hurtPlayer(w: World, amount: number) {
 // ---------- pickups ----------
 
 /** Health, armor and staples stay on the floor while you're full, for later. */
-export const wanted = (p: Player, perk: Perk) =>
-  perk === "health" ? p.hp < 100 : perk === "armor" ? p.armor < 100 : perk === "ammo" ? p.ammo < MAX_AMMO : true;
+export const wanted = (p: Player, perk: Perk | null) =>
+  perk === null ? true : perk === "health" ? p.hp < 100 : perk === "armor" ? p.armor < 100 : perk === "ammo" ? p.ammo < MAX_AMMO : true;
 
 const sec = (s: number) => Math.round(s * 30);
 
@@ -564,10 +701,20 @@ const sec = (s: number) => Math.round(s * 30);
 export function collect(w: World, pk: Pickup) {
   if (pk.taken) return;
   pk.taken = true;
-  w.collected++;
   const p = w.player;
-  const { perk, power, label, file } = pk.friend;
   p.glow = 8;
+  if (!pk.friend || pk.gun) {
+    // A weapon: from a kept file, its size sets the shots; a drop is middling.
+    const gun = pk.gun ?? "spread";
+    const shots = GUN[gun].shots(pk.friend ? pk.friend.power : 4);
+    arm(w, gun, shots);
+    if (pk.friend) w.collected++;
+    play(w, "powerup");
+    say(w, pk.friend ? `${GUN[gun].name} (${pk.friend.label})` : `${GUN[gun].name} DROPPED`, gun === "basic" ? "info" : gun, 75);
+    return;
+  }
+  w.collected++;
+  const { perk, power, label, file } = pk.friend;
   let text = "";
   switch (perk) {
     case "health": {
@@ -605,11 +752,6 @@ export function collect(w: World, pk: Pickup) {
       text = "RAPID FIRE";
       play(w, "powerup");
       break;
-    case "spread":
-      p.spread += sec(10 + power * 2);
-      text = "FAN STAPLER";
-      play(w, "powerup");
-      break;
     case "ammo": {
       const add = 15 + power * 6;
       p.ammo = Math.min(MAX_AMMO, p.ammo + add);
@@ -617,11 +759,6 @@ export function collect(w: World, pk: Pickup) {
       play(w, "pop");
       break;
     }
-    case "power":
-      p.power += sec(6 + power * 1.4);
-      text = "SPLASH CANNON";
-      play(w, "powerup");
-      break;
     case "points":
       w.score += 100 * power;
       text = `+${100 * power}`;
@@ -644,10 +781,18 @@ export function step(w: World, io: Io) {
 
   if (w.phase === "ready") {
     turn(w, io.input); // look around while waiting
-    if (w.tick === 1) play(w, "rumble");
+    if (w.phaseT === READY_TICKS) play(w, "rumble");
     if (--w.phaseT <= 0) {
       w.phase = "play";
-      say(w, "SHOOT THE DELETED FILES", "info", 75);
+      say(w, w.level === 0 ? "SHOOT THE DELETED FILES" : `${w.theme.name}: ${w.alive} MORE`, "info", 75);
+    }
+  } else if (w.phase === "clear") {
+    turn(w, io.input);
+    for (const z of w.zombies) if (z.dying > 0) z.dying--;
+    if (p.recoil > 0) p.recoil--;
+    if (--w.phaseT <= 0) {
+      p.hp = Math.min(100, p.hp + 20); // a breather between floors
+      enterLevel(w, w.level + 1);
     }
   } else if (w.phase === "won" || w.phase === "lost") {
     for (const z of w.zombies) if (z.dying > 0) z.dying--;
@@ -660,14 +805,20 @@ export function step(w: World, io: Io) {
     }
   } else {
     movePlayer(w, io.input);
-    for (const pk of w.pickups) if (!pk.taken && wanted(p, pk.friend.perk) && Math.hypot(pk.x - p.x, pk.y - p.y) < 0.6) collect(w, pk);
+    for (const pk of w.pickups) if (!pk.taken && wanted(p, pk.gun ? null : pk.friend?.perk ?? null) && Math.hypot(pk.x - p.x, pk.y - p.y) < 0.6) collect(w, pk);
     updateFlow(w);
     weapon(w, io.input);
     zombies(w);
     allies(w);
     waves(w);
     w.target = aim(w, p.a).z;
-    if (w.phase === "play" && w.alive === 0) {
+    if (w.phase === "play" && w.alive === 0 && w.level < w.levels.length - 1) {
+      w.phase = "clear";
+      w.phaseT = CLEAR_TICKS;
+      w.score += 250;
+      say(w, "FLOOR CLEAN! +250", "info", CLEAR_TICKS);
+      play(w, "jingle");
+    } else if (w.phase === "play" && w.alive === 0) {
       w.phase = "won";
       w.won = true;
       w.phaseT = END_TICKS;
@@ -687,10 +838,11 @@ function ageFx(w: World) {
   for (let i = w.fx.length - 1; i >= 0; i--) if (++w.fx[i].t >= w.fx[i].ttl) w.fx.splice(i, 1);
 }
 
+/** Turn with the keys (unless strafing), and with the mouse while it's captured. */
 function turn(w: World, inp: Input) {
-  if (inp.held("alt")) return;
   const p = w.player;
-  p.a += TURN * ((inp.held("right") ? 1 : 0) - (inp.held("left") ? 1 : 0));
+  if (!inp.held("alt")) p.a += TURN * ((inp.held("right") ? 1 : 0) - (inp.held("left") ? 1 : 0));
+  if (inp.captured()) p.a += Math.max(-MOUSE_MAX, Math.min(MOUSE_MAX, inp.pointerDX() * MOUSE_TURN));
   p.a = Math.atan2(Math.sin(p.a), Math.cos(p.a));
 }
 
@@ -713,36 +865,102 @@ function weapon(w: World, inp: Input) {
   if (p.cd > 0) p.cd--;
   if (p.recoil > 0) p.recoil--;
   if (p.rapid > 0) p.rapid--;
-  if (p.spread > 0) p.spread--;
-  if (p.power > 0) p.power--;
-  if (!(inp.held("fire") || inp.clicked()) || p.cd > 0) return;
-  const mode = gunOf(p);
-  let cd = mode === "power" ? 14 : mode === "spread" ? 10 : 8;
+  // The mouse fires only once it's captured: the click that captures it
+  // doesn't shoot (nor does holding on from it); a click after does, and
+  // holding keeps firing.
+  const captured = inp.captured();
+  w.trigger = captured && (inp.clicked() || (w.trigger && inp.mouseHeld()));
+  if (!(inp.held("fire") || w.trigger) || p.cd > 0) return;
+  const mode = p.gun;
+  let cd = GUN[mode].cd;
   if (p.rapid > 0) cd = Math.ceil(cd / 2);
-  if (mode !== "power") {
+  if (mode === "basic") {
     if (p.ammo > 0) p.ammo--;
     else cd = Math.ceil(cd * 1.25); // out of staples: still fires, slower
-  }
+  } else p.gunLeft--;
   p.cd = cd;
   p.recoil = 5;
   w.shots++;
-  play(w, "shoot");
-  const rays = mode === "spread" ? SPREAD_RAYS : CENTER_RAY;
-  w.lastRays = rays.length;
+  play(w, mode === "beam" ? "beam" : "shoot");
   const before = w.zombies.length;
-  for (const da of rays) {
-    const a = p.a + da;
-    const { z, dist } = aim(w, a);
-    const ix = p.x + Math.cos(a) * (dist - 0.15);
-    const iy = p.y + Math.sin(a) * (dist - 0.15);
-    if (z) {
-      hitZombie(w, z, mode === "power" ? 3 : 1, p.x, p.y);
-      addFx(w, "spark", ix, iy, z.height * 0.55, 0.16, 5);
-    } else if (mode !== "power" && dist > 0.8) addFx(w, "spark", ix, iy, 0.5, 0.12, 5);
-    if (mode === "power") blast(w, ix, iy, z, before);
+  if (mode === "beam") beam(w, before);
+  else if (mode === "bounce") ricochet(w);
+  else {
+    const rays = mode === "spread" ? SPREAD_RAYS : mode === "burst" ? BURST_RAYS : CENTER_RAY;
+    const range = mode === "burst" ? BURST_RANGE : 24;
+    w.lastRays = rays.length;
+    for (const da of rays) {
+      const a = p.a + da;
+      const { z, dist } = aim(w, a, p, range);
+      const ix = p.x + Math.cos(a) * (dist - 0.15);
+      const iy = p.y + Math.sin(a) * (dist - 0.15);
+      if (z) {
+        hitZombie(w, z, mode === "power" ? 3 : 1, p.x, p.y);
+        addFx(w, "spark", ix, iy, z.height * 0.55, 0.16, 5);
+      } else if (mode !== "power" && dist > 0.8 && (mode !== "burst" || dist < range)) addFx(w, "spark", ix, iy, 0.5, 0.12, 5);
+      if (mode === "power") blast(w, ix, iy, z, before);
+    }
+  }
+  if (mode !== "basic" && p.gunLeft <= 0) {
+    p.gun = "basic";
+    p.gunLeft = p.gunMax = 0;
+    say(w, `${GUN[mode].short} EMPTY: BACK TO STAPLES`, "warn", 60);
+    play(w, "blip");
   }
   // Shots are loud: anything close wakes up.
   for (const z of w.zombies) if (!z.dead && Math.hypot(z.x - p.x, z.y - p.y) < 5) z.awake = true;
+}
+
+/** The defrag beam: 2 damage to every zombie on the line up to the wall (only those there before the shot). */
+function beam(w: World, n: number) {
+  const p = w.player;
+  const dx = Math.cos(p.a);
+  const dy = Math.sin(p.a);
+  const dist = rayDist(w.maze, p.x, p.y, dx, dy, 24);
+  w.lastRays = 1;
+  for (let i = 0; i < n; i++) {
+    const c = w.zombies[i];
+    if (c.dead || cloak(c) === 2) continue;
+    const rx = c.x - p.x;
+    const ry = c.y - p.y;
+    const along = rx * dx + ry * dy;
+    if (along <= 0.05 || along >= dist) continue;
+    if (Math.abs(ry * dx - rx * dy) <= c.radius + AIM_ASSIST) hitZombie(w, c, 2, p.x, p.y);
+  }
+  // a dotted line of light down the beam
+  for (let d = 1.8; d < Math.min(dist, 8); d += 1.2) addFx(w, "zap", p.x + dx * d, p.y + dy * d, 0.5, 0.14, 6);
+}
+
+/** The ricochet: a staple that bounces off up to BOUNCES walls, hitting the first zombie on its path. */
+function ricochet(w: World) {
+  const p = w.player;
+  let x = p.x;
+  let y = p.y;
+  let dx = Math.cos(p.a);
+  let dy = Math.sin(p.a);
+  let left = 24;
+  w.lastRays = 1;
+  for (let b = 0; b <= BOUNCES && left > 0.3; b++) {
+    const { z, dist } = aim(w, Math.atan2(dy, dx), { x, y }, left);
+    const ix = x + dx * dist;
+    const iy = y + dy * dist;
+    if (z) {
+      // after a bounce it comes at the zombie from where the wall was
+      hitZombie(w, z, b > 0 ? 2 : 1, x, y);
+      addFx(w, "spark", ix - dx * 0.15, iy - dy * 0.15, z.height * 0.55, 0.16, 5);
+      return;
+    }
+    if (dist >= left) return;
+    addFx(w, "spark", ix - dx * 0.1, iy - dy * 0.1, 0.5, 0.14, 6);
+    left -= dist;
+    // which wall: flip across the one the ray crossed (both at a corner)
+    const flipX = Math.floor(ix + dx * 0.01) !== Math.floor(ix - dx * 0.01) && isWall(w.maze, ix + dx * 0.01, iy - dy * 0.01);
+    const flipY = Math.floor(iy + dy * 0.01) !== Math.floor(iy - dy * 0.01) && isWall(w.maze, ix - dx * 0.01, iy + dy * 0.01);
+    x = ix - dx * 0.02;
+    y = iy - dy * 0.02;
+    if (flipX || !flipY) dx = -dx;
+    if (flipY || !flipX) dy = -dy;
+  }
 }
 
 /** Steps to the player from every cell, refreshed when the player changes cell. */

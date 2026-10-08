@@ -5,9 +5,10 @@ import { cast, seeded } from "../../round";
 import { file, harness, sampleRound } from "../../testing";
 import type { ArcadeFile, ArcadeRound, Button, GameResult } from "../../types";
 import { readyLine } from "./draw";
-import { aim, cloak, collect, createWorld, gunOf, hitsFor, hitZombie, hurtPlayer, los, lootFor, MAX_AMMO, MIN_ZOMBIES, primed, step, type World, type Zombie } from "./logic";
-import { buildMaze, isWall, reach } from "./maze";
-import { CARD_SLOT, gunPixels, px, SHIELD_SLOT, shieldPixels, zombiePixels, ZOMBIE_H, ZOMBIE_W } from "./sprites";
+import { aim, arm, BURST_RANGE, cloak, collect, createWorld, enterLevel, GUN, gunOf, SPECIAL_GUNS, hitsFor, hitZombie, hurtPlayer, los, lootFor, MAX_AMMO, MIN_ZOMBIES, primed, step, type World, type Zombie } from "./logic";
+import { buildMaze, CLASSIC, isWall, reach } from "./maze";
+import { levelsFor, levelTitle, THEMES } from "./themes";
+import { CARD_SLOT, gunCardPixels, gunPixels, propPixels, px, SHIELD_SLOT, shieldPixels, zombiePixels, ZOMBIE_H, ZOMBIE_W } from "./sprites";
 
 const KEY: Record<Button, string> = { left: "ArrowLeft", right: "ArrowRight", up: "ArrowUp", down: "ArrowDown", fire: " ", alt: "x" };
 
@@ -64,14 +65,15 @@ const angTo = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a -
  * speed, reacts `react` ticks late, wobbles its aim, and fires only when
  * something is in the crosshair. Returns the result (null if out of time).
  */
-function autoPlay(round: ArcadeRound, seed: number, react = 10, wobble = 0.04): GameResult | null {
+function autoPlay(round: ArcadeRound, seed: number, react = 10, wobble = 0.04, themes?: Set<string>): GameResult | null {
   const t = harness(game, round, seed);
   const w = (t.game as UndeleteGame).world;
-  const m = w.maze;
   let last: Zombie | null = null;
   let seen = 0;
   for (let tick = 0; tick < 30 * 60 * 5 && !t.result(); tick++) {
     const p = w.player;
+    const m = w.maze; // a new one each floor
+    themes?.add(w.theme.id);
     // the nearest zombie in sight (a flickering one it was already tracking counts)
     let vis: Zombie | null = null;
     let vd = 9;
@@ -134,7 +136,7 @@ describe("undelete: files become zombies and pickups", () => {
     const c = cast(sampleRound());
     for (const foe of c.foes) expect(hitsFor(foe)).toBeGreaterThanOrEqual(Math.ceil(foe.hp / 2));
     expect(w.pickups.length).toBe(1);
-    expect(w.pickups[0].friend.perk).toBe("health");
+    expect(w.pickups[0].friend!.perk).toBe("health");
   });
 
   it("the READY line counts binned files and filler junk apart", () => {
@@ -290,7 +292,7 @@ describe("undelete: abilities", () => {
     const z = w.zombies[0];
     front(w, z, 2, 0);
     z.hp = 1;
-    w.player.power = 100;
+    arm(w, "power", 10);
     run(1, ["fire"]);
     expect(z.dead).toBe(true);
     expect(w.zombies.filter((m) => m.mini && !m.dead).length).toBe(2);
@@ -429,6 +431,8 @@ describe("undelete: perks", () => {
     expect(r1.w.player.cd).toBeLessThan(slow);
 
     const r2 = pick(kept("movie.mov", "video", 2e8));
+    expect(["spread", "burst", "bounce"]).toContain(r2.w.pickups[0].gun);
+    r2.w.pickups[0].gun = "spread";
     collect(r2.w, r2.w.pickups[0]);
     expect(gunOf(r2.w.player)).toBe("spread");
     r2.run(1, ["fire"]);
@@ -442,6 +446,8 @@ describe("undelete: perks", () => {
 
   it("power gives a splash cannon that hits a crowd; points add score", () => {
     const { w, run } = pick(kept("tool.pkg", "installer", 5e7));
+    expect(["power", "beam"]).toContain(w.pickups[0].gun);
+    w.pickups[0].gun = "power";
     collect(w, w.pickups[0]);
     expect(gunOf(w.player)).toBe("power");
     const a = w.zombies[0];
@@ -455,7 +461,7 @@ describe("undelete: perks", () => {
     const p = pick(kept("misc.dat", "unknown", 1e6)).w;
     const before = p.score;
     collect(p, p.pickups[0]);
-    expect(p.score).toBe(before + 100 * p.pickups[0].friend.power);
+    expect(p.score).toBe(before + 100 * p.pickups[0].friend!.power);
   });
 });
 
@@ -587,12 +593,15 @@ describe("undelete: playing a round", () => {
         ...Array.from({ length: 10 }, (_, i) => file(`keep-${i}.jpg`, "image", 2_000_000, "kept")),
       ],
     };
+    // big rounds are several floors, so this crosses every theme
+    const themes = new Set<string>();
     for (const round of [junk, photos])
-      for (const seed of [1, 2]) {
-        const r = autoPlay(round, seed);
+      for (const seed of [1, 2, 3]) {
+        const r = autoPlay(round, seed, 10, 0.04, themes);
         expect(r?.won).toBe(true);
         expect(r!.defeated).toBe(r!.foes);
       }
+    expect(themes.size).toBe(THEMES.length);
   });
 
   it("a player holding fire and moving survives the first 10 seconds", () => {
@@ -610,6 +619,274 @@ describe("undelete: playing a round", () => {
   });
 });
 
+
+describe("undelete: mouse piloting", () => {
+  function captured() {
+    const r = rig([trashed("x.bin", "unknown", 100)]);
+    arena(r.w);
+    r.w.zombies.forEach((z) => (z.dmg = 0));
+    return r;
+  }
+  /** One tick with the mouse captured (or not), moved `dx`, and a click and/or a held button. */
+  function tick(r: ReturnType<typeof rig>, input: KeyInput, o: { on?: boolean; dx?: number; click?: boolean; hold?: boolean }) {
+    input.setCaptured(o.on ?? true);
+    if (o.dx) input.look(o.dx);
+    if (o.click) input.pointerDown();
+    if (!o.hold && !o.click) input.pointerUp();
+    step(r.w, { input, sfx: () => {}, end: () => {} });
+    if (o.click && !o.hold) input.pointerUp();
+    input.endTick();
+  }
+
+  it("sideways mouse movement turns while captured (clamped per tick), not otherwise", () => {
+    const r = captured();
+    const input = new KeyInput();
+    tick(r, input, { on: false, dx: 50 });
+    expect(r.w.player.a).toBe(0);
+    tick(r, input, { dx: 50 });
+    expect(r.w.player.a).toBeCloseTo(50 * 0.004);
+    tick(r, input, { dx: -50 });
+    expect(r.w.player.a).toBeCloseTo(0);
+    tick(r, input, { dx: 5000 });
+    expect(r.w.player.a).toBeCloseTo(0.35);
+  });
+
+  it("the click that captures the mouse doesn't fire; clicks after do, and holding keeps firing at the normal rate", () => {
+    const r = captured();
+    const input = new KeyInput();
+    // the capturing click: not captured yet on its tick, captured while still held
+    tick(r, input, { on: false, click: true, hold: true });
+    tick(r, input, { hold: true });
+    tick(r, input, { hold: true });
+    expect(r.w.shots).toBe(0);
+    tick(r, input, {});
+    tick(r, input, { click: true });
+    expect(r.w.shots).toBe(1);
+    for (let i = 0; i < 9; i++) tick(r, input, {});
+    tick(r, input, { click: true, hold: true });
+    for (let i = 0; i < 23; i++) tick(r, input, { hold: true });
+    expect(r.w.shots).toBe(1 + 3); // 24 ticks at one shot per 8
+    tick(r, input, {});
+    for (let i = 0; i < 20; i++) tick(r, input, {});
+    expect(r.w.shots).toBe(4);
+    // let go of the mouse (Esc): holding the button no longer fires
+    tick(r, input, { click: true, hold: true });
+    for (let i = 0; i < 10; i++) tick(r, input, { on: false, hold: true });
+    expect(r.w.shots).toBe(5);
+  });
+
+  it("the keys still work while the mouse is captured: walk, strafe, turn, fire", () => {
+    const r = captured();
+    const input = new KeyInput();
+    input.setCaptured(true);
+    input.keydown("w");
+    input.keydown(" ");
+    const x = r.w.player.x;
+    for (let i = 0; i < 10; i++) (step(r.w, { input, sfx: () => {}, end: () => {} }), input.endTick());
+    expect(r.w.player.x).toBeGreaterThan(x + 0.5);
+    expect(r.w.shots).toBeGreaterThan(0);
+    input.keydown("ArrowRight");
+    for (let i = 0; i < 4; i++) (step(r.w, { input, sfx: () => {}, end: () => {} }), input.endTick());
+    expect(r.w.player.a).toBeGreaterThan(0.2);
+  });
+});
+
+describe("undelete: weapons", () => {
+  function range() {
+    const r = rig([trashed("a.bin", "unknown", 1e6), trashed("b.bin", "unknown", 1e6), trashed("c.bin", "unknown", 1e6)]);
+    arena(r.w);
+    r.w.zombies.forEach((z) => Object.assign(z, { dmg: 0, hp: 9, maxHp: 9 }));
+    return r;
+  }
+
+  it("weapon perks give one of their family's guns; any gun's shots run out back to staples", () => {
+    const { w, run } = range();
+    for (const gun of SPECIAL_GUNS) {
+      arm(w, gun, 2);
+      expect(gunOf(w.player)).toBe(gun);
+      run(1, ["fire"]);
+      expect(w.player.gunLeft).toBe(1);
+      w.player.cd = 0;
+      run(1, ["fire"]);
+      expect(gunOf(w.player)).toBe("basic");
+      expect(w.msg.text).toContain("BACK TO STAPLES");
+      w.player.cd = 0;
+    }
+    // the same gun again adds shots; another one replaces it
+    arm(w, "beam", 5);
+    arm(w, "beam", 5);
+    expect([w.player.gun, w.player.gunLeft]).toEqual(["beam", 10]);
+    arm(w, "burst", 4);
+    expect([w.player.gun, w.player.gunLeft, w.player.gunMax]).toEqual(["burst", 4, 4]);
+    // specials don't use staples
+    const ammo = w.player.ammo;
+    w.player.cd = 0;
+    run(1, ["fire"]);
+    expect(w.player.ammo).toBe(ammo);
+    for (const gun of SPECIAL_GUNS) expect(GUN[gun].shots(10)).toBeGreaterThan(GUN[gun].shots(1));
+  });
+
+  it("beam: pierces every zombie in the line", () => {
+    const { w, run } = range();
+    const [a, b] = w.zombies;
+    front(w, a, 2, 0);
+    front(w, b, 4, 0);
+    arm(w, "beam", 5);
+    run(1, ["fire"]);
+    expect(a.hp).toBe(7);
+    expect(b.hp).toBe(7);
+  });
+
+  it("ricochet: bounces off a wall to hit a zombie the staple couldn't reach straight", () => {
+    const { w, run } = range();
+    const z = w.zombies[0];
+    // behind you: the staple goes to the east wall and comes back
+    w.player.x = w.maze.w - 5;
+    Object.assign(z, { x: w.player.x - 2, y: w.player.y, face: 0, awake: true });
+    arm(w, "bounce", 5);
+    run(1, ["fire"]);
+    expect(z.hp).toBe(9 - 2);
+    // the plain stapler can't
+    const { w: w2, run: run2 } = range();
+    w2.player.x = w2.maze.w - 5;
+    Object.assign(w2.zombies[0], { x: w2.player.x - 2, y: w2.player.y });
+    run2(1, ["fire"]);
+    expect(w2.zombies[0].hp).toBe(9);
+  });
+
+  it("shredder: shreds up close, does nothing far off", () => {
+    const { w, run } = range();
+    const [near, far] = w.zombies;
+    front(w, near, 1.2, 0);
+    front(w, far, BURST_RANGE + 2, 0);
+    far.y += 3;
+    arm(w, "burst", 5);
+    run(1, ["fire"]);
+    expect(w.lastRays).toBe(7);
+    expect(near.hp).toBeLessThanOrEqual(9 - 3);
+    const r2 = range();
+    front(r2.w, r2.w.zombies[0], BURST_RANGE + 1, 0);
+    arm(r2.w, "burst", 5);
+    r2.run(1, ["fire"]);
+    expect(r2.w.zombies[0].hp).toBe(9);
+  });
+
+  it("file zombies sometimes drop a weapon; picking it up arms it but isn't a friend collected", () => {
+    let drops = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const { w } = rig([file("old.pdf", "pdf", 1e6, "deleted"), trashed("x.png", "image", 1e6)], seed);
+      arena(w);
+      for (const z of w.zombies.slice(0, 2)) ((z.shield = 0), hitZombie(w, z, 99, z.x, z.y));
+      const dropped = w.pickups.filter((pk) => !pk.friend && !pk.taken);
+      for (const pk of dropped) {
+        expect(SPECIAL_GUNS).toContain(pk.gun);
+        collect(w, pk);
+        expect(gunOf(w.player)).toBe(pk.gun);
+        expect(w.collected).toBe(0);
+      }
+      drops += dropped.length;
+    }
+    expect(drops).toBeGreaterThan(0);
+    expect(drops).toBeLessThan(18);
+  });
+
+  it("the HUD and the view draw with every gun in hand and every pickup on the floor", () => {
+    const t = harness(game, sampleRound(), 1);
+    const w = (t.game as UndeleteGame).world;
+    t.run(50);
+    for (const gun of SPECIAL_GUNS) {
+      w.pickups.push({ friend: null, gun, x: w.player.x + Math.cos(w.player.a) * 1.5, y: w.player.y + Math.sin(w.player.a) * 1.5, taken: false });
+      arm(w, gun, 3);
+      t.run(3, ["fire"], 1);
+    }
+  });
+});
+
+describe("undelete: floors and themes", () => {
+  const kinds: ArcadeFile["kind"][] = ["image", "pdf", "markdown", "audio", "video", "archive", "installer", "unknown"];
+  const big = (n: number, folders?: string[]): ArcadeRound => ({
+    source: "Plan",
+    folders,
+    files: Array.from({ length: n }, (_, i) => file(`z${i}.dat`, kinds[i % kinds.length], 10 ** (3 + (i % 6)), i % 4 ? "trashed" : "deleted")),
+  });
+
+  it("small rounds are one floor, big ones up to four, with every zombie on exactly one", () => {
+    expect(levelsFor(10)).toBe(1);
+    expect(levelsFor(15)).toBe(1);
+    expect(levelsFor(16)).toBe(2);
+    expect(levelsFor(48)).toBe(4);
+    const w = rig(big(48).files).w;
+    expect(w.levels.length).toBe(4);
+    const ids = w.levels.flatMap((l) => l.zombies.map((z) => z.id));
+    expect(new Set(ids).size).toBe(48);
+    expect(w.foes).toBe(48);
+    expect(w.zombies).toBe(w.levels[0].zombies);
+  });
+
+  it("titles name the level and a folder, cycling through the round's folders", () => {
+    expect(levelTitle(0, ["Downloads", "Photos"])).toBe("LEVEL 1 - DOWNLOADS");
+    expect(levelTitle(2, ["Downloads", "Photos"])).toBe("LEVEL 3 - DOWNLOADS");
+    expect(levelTitle(1, ["a very long folder name"])).toBe("LEVEL 2 - A VERY LONG F.");
+    const t = harness(game, big(40, ["Work", "Music"]), 2);
+    const w = (t.game as UndeleteGame).world;
+    expect(w.title).toBe("LEVEL 1 - WORK");
+  });
+
+  it("clearing a floor loads the next, in another theme, with READY again; the last one wins", () => {
+    const t = harness(game, big(40, ["Work", "Music"]), 3);
+    const w = (t.game as UndeleteGame).world;
+    const titles: string[] = [];
+    const themes: string[] = [];
+    t.run(50);
+    for (let guard = 0; guard < 10 && !t.result(); guard++) {
+      titles.push(w.title);
+      themes.push(w.theme.id);
+      for (const z of w.zombies) if (!z.dead) ((z.shield = 0), hitZombie(w, z, 99, z.x, z.y));
+      t.run(2);
+      if (w.level === w.levels.length - 1) break;
+      expect(w.phase).toBe("clear");
+      t.run(60);
+      if (!t.result()) {
+        expect(w.phase).toBe("ready");
+        expect(w.zombies.every((z) => !isWall(w.maze, z.x, z.y))).toBe(true);
+        t.run(50);
+      }
+    }
+    expect(titles).toEqual(["LEVEL 1 - WORK", "LEVEL 2 - MUSIC", "LEVEL 3 - WORK"]);
+    for (let i = 1; i < themes.length; i++) expect(themes[i]).not.toBe(themes[i - 1]);
+    t.run(100);
+    expect(t.result()?.won).toBe(true);
+    expect(t.result()?.defeated).toBe(40);
+  });
+
+  it("themes are picked at random: all of them turn up", () => {
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 30; seed++) seen.add(rig([trashed("a.txt", "text", 10)], seed).w.theme.id);
+    expect(seen.size).toBe(THEMES.length);
+    expect(THEMES.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("every theme's mazes: all floor reachable, everyone on open floor, cover where the theme has it", () => {
+    for (const theme of THEMES) {
+      let cover = 0;
+      for (let seed = 1; seed <= 8; seed++) {
+        const { w } = rig(big(24).files, seed);
+        enterLevel(w, 0, theme);
+        const m = w.maze;
+        const steps = reach(m, Math.floor(m.start.x), Math.floor(m.start.y));
+        for (let i = 0; i < m.cells.length; i++) if (m.cells[i] === 0) expect(steps[i]).toBeGreaterThanOrEqual(0);
+        for (const e of [...w.zombies, ...w.pickups, ...w.props, w.player]) expect(isWall(m, e.x, e.y)).toBe(false);
+        for (const z of w.zombies) expect(Math.hypot(z.x - w.player.x, z.y - w.player.y)).toBeGreaterThan(2.5);
+        for (const r of m.rooms) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) if (m.cells[y * m.w + x] === theme.layout.pillar) cover++;
+        expect(m.cells.every((c) => c <= 5)).toBe(true);
+      }
+      expect(cover).toBeGreaterThan(8);
+    }
+    // the classic layout is the default
+    expect(buildMaze(seeded(1), 10, 3).cells).toEqual(buildMaze(seeded(1), 10, 3, CLASSIC).cells);
+  });
+});
+
 describe("undelete: art", () => {
   it("sprites are the sizes the drawing code expects", () => {
     for (const ability of ["flash", "shield", "teleport", "sonic", "fast", "split", "tank", "basic"] as const)
@@ -617,7 +894,11 @@ describe("undelete: art", () => {
         const p = zombiePixels(ability, frame, true);
         expect([p.w, p.h]).toEqual([ZOMBIE_W, ZOMBIE_H]);
       }
-    for (const kind of ["basic", "spread", "power"] as const) expect([gunPixels(kind, false).w, gunPixels(kind, true).h]).toEqual([32, 30]);
+    for (const kind of ["basic", ...SPECIAL_GUNS] as const) {
+      expect([gunPixels(kind, false).w, gunPixels(kind, true).h]).toEqual([32, 30]);
+      expect([gunCardPixels(kind).w, gunCardPixels(kind).h]).toEqual([12, 15]);
+    }
+    for (const t of THEMES) for (const kind of t.props) expect([propPixels(kind).w, propPixels(kind).h]).toEqual([10, 10]);
     expect(CARD_SLOT.w).toBe(8);
   });
 

@@ -3,8 +3,9 @@
 // the walls column by column, then the weapon and the HUD at full size.
 
 import type { Ability, GameContext, Perk } from "../../types";
-import { cloak, gunOf, primed, type Ally, type Fx, type GunMode, type Pickup, type Tone, type Wave, type World, type Zombie } from "./logic";
+import { cloak, GUN, gunOf, primed, type Ally, type Fx, type GunMode, type Pickup, type Prop, type Tone, type Wave, type World, type Zombie } from "./logic";
 import type { Maze } from "./maze";
+import { THEMES, type PropKind, type Theme } from "./themes";
 import {
   ABILITY_COLOR,
   blankCanvas,
@@ -13,18 +14,19 @@ import {
   botPixels,
   CARD_SLOT,
   cardPixels,
-  CEIL_ART,
-  CEIL_LIT_ART,
   COLORS,
   dustMark,
   eyesPixels,
   fade,
-  FLOOR_ART,
+  gunCardPixels,
+  GUN_COLOR,
   gunPixels,
   HUD_ICONS,
   mapPixels,
+  meanColor,
   muzzlePixels,
   PERK_COLOR,
+  propPixels,
   puffPixels,
   px,
   shaded,
@@ -34,8 +36,8 @@ import {
   silhouette,
   sparkPixels,
   toCanvas,
+  themeArt,
   unknownMark,
-  WALL_ART,
   warpPixels,
   wavePixels,
   zapPixels,
@@ -72,13 +74,13 @@ const spriteFog = (d: number) => (d < 4 ? 0 : d < 8 ? 1 : 2);
 const ABILITIES: Ability[] = ["flash", "shield", "teleport", "sonic", "fast", "split", "tank", "basic"];
 const PERKS: Perk[] = ["health", "armor", "ally", "rapid", "spread", "ammo", "power", "points"];
 const FRAMES: ZombieFrame[] = ["walkA", "walkB", "swipe"];
-const GUNS: GunMode[] = ["basic", "spread", "power"];
-const GUN_COLOR = [COLORS.yellow, COLORS.orange, COLORS.pink];
+const GUNS: GunMode[] = ["basic", "spread", "power", "beam", "bounce", "burst"];
+const PROP_KINDS: PropKind[] = THEMES.flatMap((t) => t.props);
 const HUD_NAMES = ["heart", "armor", "ammo", "skull", "coin"] as const;
 /** Puff colors by index (Fx.color strings map onto these; unknown is lilac). */
 const PUFF_COLORS = [COLORS.lilac, COLORS.yellow, ABILITY_COLOR.basic, COLORS.cyan];
 
-const TONE: Record<Tone, string> = { ...PERK_COLOR, info: COLORS.ink, warn: COLORS.red };
+const TONE: Record<Tone, string> = { ...PERK_COLOR, beam: GUN_COLOR.beam, bounce: GUN_COLOR.bounce, burst: GUN_COLOR.burst, info: COLORS.ink, warn: COLORS.red };
 
 /** A sprite at a fog step (0 near .. 2 far). */
 const fogged = (p: Pixels, fog: number) => (fog ? mapPixels(p, (c) => fade(c, SPRITE_FADE[fog])) : p);
@@ -101,6 +103,8 @@ const art = () => ({
   // shield: cracked * 4 + (fog 0..2, or 3 = hit flash)
   shields: new Shelf((i) => ((i & 3) === 3 ? silhouette(shieldPixels(i > 3), COLORS.ink) : fogged(shieldPixels(i > 3), i & 3))),
   cards: new Shelf((i) => fogged(cardPixels(PERKS[(i / 3) | 0]), i % 3)),
+  gunCards: new Shelf((i) => fogged(gunCardPixels(GUNS[(i / 3) | 0]), i % 3)),
+  props: new Shelf((i) => fogged(propPixels(PROP_KINDS[(i / 3) | 0]), i % 3)),
   // bot: (awake * 2 + firing) * 3 + fog
   bots: new Shelf((i) => fogged(botPixels(i >= 6, ((i / 3) | 0) % 2 === 1), i % 3)),
   waves: new Shelf(wavePixels),
@@ -110,7 +114,7 @@ const art = () => ({
   zap: new Shelf(zapPixels),
   spark: new Shelf(sparkPixels),
   guns: new Shelf((i) => gunPixels(GUNS[i >> 1], (i & 1) === 1)),
-  muzzles: new Shelf((i) => muzzlePixels(GUN_COLOR[i])),
+  muzzles: new Shelf((i) => muzzlePixels(GUN_COLOR[GUNS[i]])),
   hud: new Shelf((i) => HUD_ICONS[HUD_NAMES[i]]),
   marks: new Shelf((i) => (i ? dustMark() : unknownMark())),
 });
@@ -137,11 +141,26 @@ const enum T {
   Ally,
   Wave,
   Fx,
+  Prop,
+}
+
+/** A theme's textures at every fog step, and its minimap colors. */
+interface Look {
+  walls: Uint32Array[][];
+  floor: Uint32Array[];
+  ceil: Uint32Array[];
+  ceilLit: Uint32Array[];
+  map: number[];
+}
+
+function lookOf(t: Theme): Look {
+  const a = themeArt(t);
+  return { walls: a.walls.map(shaded), floor: shaded(a.floor), ceil: shaded(a.ceil), ceilLit: shaded(a.ceilLit), map: [0, ...a.walls.map((p) => fade(meanColor(p), 0.8))] };
 }
 
 interface Bill {
   type: T;
-  ref: Zombie | Pickup | Ally | Wave | Fx | null;
+  ref: Zombie | Pickup | Ally | Wave | Fx | Prop | null;
   depth: number;
   /** Screen x of the center, in view pixels. */
   sx: number;
@@ -158,10 +177,7 @@ export class View {
   private img: ImageData | null;
   private buf: Uint32Array;
   private zbuf = new Float32Array(VW);
-  private walls = WALL_ART.map(shaded);
-  private floor = shaded(FLOOR_ART);
-  private ceil = shaded(CEIL_ART);
-  private ceilLit = shaded(CEIL_LIT_ART);
+  private looks = new Map<string, Look>();
   private art = art();
   private pool: Bill[] = Array.from({ length: POOL }, () => ({ type: T.Fx, ref: null, depth: 0, sx: 0, left: 0, top: 0, w: 0, h: 0 }));
   private count = 0;
@@ -171,6 +187,7 @@ export class View {
   private score = -1;
   private scoreText = "0";
   private readyText: string | null = null;
+  private readyLevel = -1;
   // camera, per frame
   private dirX = 1;
   private dirY = 0;
@@ -213,14 +230,17 @@ export class View {
     const dirY = (this.dirY = Math.sin(p.a));
     const plX = -dirY * PLANE;
     const plY = dirX * PLANE;
+    let look = this.looks.get(w.theme.id);
+    if (!look) this.looks.set(w.theme.id, (look = lookOf(w.theme)));
+    const lights = w.theme.lights;
 
     // Floor and ceiling, a row at a time (the ceiling mirrors the floor).
     for (let d = 0; d < HORIZON; d++) {
       const dist = (0.5 * F) / (d + 0.5);
       const lvl = fogStep(dist);
-      const fl = this.floor[lvl];
-      const c0 = this.ceil[lvl];
-      const c1 = this.ceilLit[lvl];
+      const fl = look.floor[lvl];
+      const c0 = look.ceil[lvl];
+      const c1 = look.ceilLit[lvl];
       let fx = p.x + dist * (dirX - plX);
       let fy = p.y + dist * (dirY - plY);
       const sx = (dist * 2 * plX) / VW;
@@ -230,7 +250,7 @@ export class View {
       for (let x = 0; x < VW; x++) {
         const t = ((((fy * 8) | 0) & 7) << 3) | (((fx * 8) | 0) & 7);
         buf[fRow + x] = fl[t];
-        buf[cRow + x] = ((fx | 0) * 7 + (fy | 0) * 13) % 5 === 0 ? c1[t] : c0[t];
+        buf[cRow + x] = ((fx | 0) * 7 + (fy | 0) * 13) % lights === 0 ? c1[t] : c0[t];
         fx += sx;
         fy += sy;
       }
@@ -278,7 +298,7 @@ export class View {
       const top = HORIZON - lineH / 2;
       const y0 = Math.max(0, Math.floor(top));
       const y1 = Math.min(VH, Math.ceil(top + lineH));
-      const tex = this.walls[Math.min(this.walls.length, Math.max(1, cell)) - 1][Math.min(6, fogStep(perp) + side)];
+      const tex = look.walls[Math.min(look.walls.length, Math.max(1, cell)) - 1][Math.min(6, fogStep(perp) + side)];
       const step = 16 / lineH;
       let ty = (y0 + 0.5 - top) * step;
       for (let y = y0; y < y1; y++) {
@@ -315,6 +335,7 @@ export class View {
     for (const a of w.allies) this.add(w, a.x, a.y, T.Ally, a);
     for (const v of w.waves) this.add(w, v.x, v.y, T.Wave, v);
     for (const pk of w.pickups) if (!pk.taken) this.add(w, pk.x, pk.y, T.Pickup, pk);
+    for (const pr of w.props) this.add(w, pr.x, pr.y, T.Prop, pr);
     for (const f of w.fx) this.add(w, f.x, f.y, T.Fx, f);
     // insertion sort by depth: small n, no allocations
     const a = this.pool;
@@ -382,13 +403,22 @@ export class View {
         return this.zombie(w, b, b.ref as Zombie, fog);
       case T.Pickup: {
         const pk = b.ref as Pickup;
-        const perk = pk.friend.perk;
-        if (perk === "ally") {
-          this.stand(b, art.bots.get(fog), 16, 18, 0.4, 16 / 18, 0.04 + bob(w, pk.x * 3));
-          return this.badge(b, pk.friend.file.kind, BOT_SLOT, 16, 18);
+        const f = pk.friend;
+        if (pk.gun || !f) {
+          // a weapon card, spinning a little to stand out from the file perks
+          this.stand(b, art.gunCards.get(GUNS.indexOf(pk.gun ?? "spread") * 3 + fog), 12, 15, 0.36, (12 / 15) * (0.75 + 0.25 * Math.cos(w.tick * 0.15 + pk.x)), 0.12 + bob(w, pk.x * 3));
+          return f ? this.badge(b, f.file.kind, CARD_SLOT, 12, 15) : undefined;
         }
-        this.stand(b, art.cards.get(PERKS.indexOf(perk) * 3 + fog), 12, 15, 0.34, 12 / 15, 0.1 + bob(w, pk.x * 3));
-        return this.badge(b, pk.friend.file.kind, CARD_SLOT, 12, 15);
+        if (f.perk === "ally") {
+          this.stand(b, art.bots.get(fog), 16, 18, 0.4, 16 / 18, 0.04 + bob(w, pk.x * 3));
+          return this.badge(b, f.file.kind, BOT_SLOT, 16, 18);
+        }
+        this.stand(b, art.cards.get(PERKS.indexOf(f.perk) * 3 + fog), 12, 15, 0.34, 12 / 15, 0.1 + bob(w, pk.x * 3));
+        return this.badge(b, f.file.kind, CARD_SLOT, 12, 15);
+      }
+      case T.Prop: {
+        const pr = b.ref as Prop;
+        return this.stand(b, art.props.get(PROP_KINDS.indexOf(w.theme.props[pr.kind]) * 3 + fog), 10, 10, 0.32, 1, 0);
       }
       case T.Ally: {
         const a = b.ref as Ally;
@@ -493,8 +523,8 @@ export class View {
         others++;
         if (b.type === T.Pickup) {
           const pk = b.ref as Pickup;
-          text = pk.friend.label;
-          color = PERK_COLOR[pk.friend.perk];
+          text = pk.gun ? GUN[pk.gun].short : pk.friend?.label ?? "";
+          color = pk.gun ? GUN_COLOR[pk.gun] : pk.friend ? PERK_COLOR[pk.friend.perk] : COLORS.ink;
         } else {
           text = (b.ref as Ally).label;
           color = COLORS.cyan;
@@ -523,7 +553,7 @@ export class View {
   private covered(i: number, x: number, y: number) {
     for (let j = 0; j < i; j++) {
       const o = this.pool[j];
-      if (o.w <= 0 || o.type === T.Fx || o.type === T.Wave) continue;
+      if (o.w <= 0 || o.type === T.Fx || o.type === T.Wave || o.type === T.Prop) continue;
       if (o.type === T.Zombie && (cloak(o.ref as Zombie) === 2 || (o.ref as Zombie).dead)) continue;
       if (x >= o.left && x < o.left + o.w && y >= o.top && y < o.top + o.h && this.zbuf[x | 0] > o.depth) return true;
     }
@@ -555,7 +585,7 @@ export class View {
       const flash = this.art.muzzles.get(mode);
       if (flash) {
         this.g.drawImage(flash, x + 16, y - 10, 32, 12);
-        if (GUNS[mode] === "spread") {
+        if (GUNS[mode] === "spread" || GUNS[mode] === "burst") {
           this.g.drawImage(flash, x - 2, y - 2, 24, 9);
           this.g.drawImage(flash, x + 42, y - 2, 24, 9);
         }
@@ -582,7 +612,7 @@ export class View {
     const m = w.maze;
     if (this.map?.maze !== m) {
       const data = new Uint32Array(m.w * 2 * m.h * 2);
-      const wall = [0, px("#5a3f86"), px("#1d5a7a"), px("#8a6a10"), px("#2f8f4f"), px("#a32686")];
+      const wall = this.looks.get(w.theme.id)?.map ?? [0, px("#5a3f86"), px("#1d5a7a"), px("#8a6a10"), px("#2f8f4f"), px("#a32686")];
       const floor = px("#1a0d2b");
       for (let y = 0; y < m.h * 2; y++)
         for (let x = 0; x < m.w * 2; x++) {
@@ -621,6 +651,13 @@ export class View {
     for (const z of w.zombies) if (!z.dead) this.dot(z.x - ox, z.y - oy, z.elite ? COLORS.yellow : COLORS.red);
     this.dot(p.x - ox, p.y - oy, COLORS.ink);
     this.dot(p.x - ox + Math.cos(p.a) * 1.2, p.y - oy + Math.sin(p.a) * 1.2, COLORS.lilac);
+    // which floor: its folder, under the map
+    if (w.levels.length > 1) {
+      const t = `${w.level + 1}/${w.levels.length}`;
+      g.fillStyle = COLORS.bg;
+      g.fillRect(X - 1, Y + SIZE + 1, SIZE + 2, 8);
+      this.ctx.text(t, X + SIZE - this.ctx.textWidth(t), Y + SIZE + 3, COLORS.lilac);
+    }
   }
 
   /** A 2x2 dot on the minimap, at cells from its top left corner. */
@@ -645,13 +682,22 @@ export class View {
     this.stat(1, 44, num(p.armor), COLORS.ink);
     this.stat(2, 84, num(p.ammo), p.ammo ? COLORS.ink : COLORS.red);
 
-    // Weapon and its timers.
+    // The weapon in hand: its name and shots left (with a bar), and rapid fire's seconds.
     const mode = gunOf(p);
-    if (mode === "power") this.timed("SPLASH CANNON", p.power, HUD_Y + 5, COLORS.pink);
-    else if (mode === "spread") this.timed("FAN STAPLER", p.spread, HUD_Y + 5, COLORS.orange);
-    else ctx.text("STAPLE BLASTER", 124, HUD_Y + 5, COLORS.lilac);
-    if (p.rapid > 0) this.timed("RAPID", p.rapid, HUD_Y + 12, COLORS.yellow);
-    else if (!p.ammo && mode !== "power") ctx.text("NO STAPLES: SLOW", 124, HUD_Y + 12, COLORS.red);
+    if (mode === "basic") ctx.text(GUN.basic.name, 124, HUD_Y + 5, COLORS.lilac);
+    else {
+      const color = GUN_COLOR[mode];
+      const low = p.gunLeft <= 3 && (w.tick >> 3) & 1;
+      ctx.text(GUN[mode].name, 124, HUD_Y + 3, color);
+      const shots = num(p.gunLeft);
+      ctx.text(shots, 124 + ctx.textWidth(GUN[mode].name) + 4, HUD_Y + 3, low ? COLORS.red : COLORS.ink);
+      g.fillStyle = COLORS.plum;
+      g.fillRect(124, HUD_Y + 10, 60, 1);
+      g.fillStyle = color;
+      g.fillRect(124, HUD_Y + 10, Math.ceil((60 * p.gunLeft) / Math.max(1, p.gunMax)), 1);
+    }
+    if (p.rapid > 0) this.timed("RAPID", p.rapid, HUD_Y + 13, COLORS.yellow);
+    else if (!p.ammo && mode === "basic") ctx.text("NO STAPLES: SLOW", 124, HUD_Y + 13, COLORS.red);
 
     this.stat(3, 214, num(w.alive), COLORS.ink);
     if (w.score !== this.score) ((this.score = w.score), (this.scoreText = num(w.score)));
@@ -704,14 +750,33 @@ export class View {
     else if (p.glow > 0) this.edge(TONE[w.msg.tone], 2);
 
     if (w.phase === "ready") {
-      this.readyText ??= readyLine(w.files, w.foes - w.files);
-      this.banner("READY", this.readyText, COLORS.yellow);
+      if (this.readyLevel !== w.level) {
+        this.readyLevel = w.level;
+        this.readyText = w.level === 0 ? readyLine(w.files, w.foes - w.files) : `${w.alive} MORE ZOMBIE${w.alive === 1 ? "" : "S"} ON THIS FLOOR`;
+      }
+      this.levelBanner(w.title, w.theme.name, this.readyText ?? "");
       return;
     }
+    if (w.phase === "clear") return this.banner("FLOOR CLEAN!", `NEXT: ${w.levels.length - w.level - 1} MORE FLOOR${w.levels.length - w.level - 1 === 1 ? "" : "S"} DOWN`, COLORS.green);
     if (w.phase === "won") return this.banner("MAZE CLEAN!", "EVERY ZOMBIE FILE PUT TO REST", COLORS.green);
     if (w.phase === "lost" || (w.phase === "done" && !w.won)) return this.banner("DELETED", "THE ZOMBIES GOT YOU", COLORS.red);
     if (w.phase === "done") return this.banner("MAZE CLEAN!", "EVERY ZOMBIE FILE PUT TO REST", COLORS.green);
     if (w.msg.t > 0) this.tag(w.msg.text, W / 2, 30, TONE[w.msg.tone]);
+  }
+
+  /** The level's title (number and folder), its theme, and a line about what's waiting. */
+  private levelBanner(title: string, theme: string, sub: string) {
+    const g = this.g;
+    const ctx = this.ctx;
+    g.fillStyle = COLORS.bg;
+    g.fillRect(0, 50, W, 50);
+    g.fillStyle = COLORS.yellow;
+    g.fillRect(0, 50, W, 1);
+    g.fillRect(0, 99, W, 1);
+    const tw = ctx.textWidth(title) * 2;
+    ctx.text(title, Math.round(W / 2 - tw / 2), 56, COLORS.yellow, 2);
+    ctx.text(theme, Math.round(W / 2 - ctx.textWidth(theme) / 2), 73, COLORS.cyan);
+    ctx.text(sub, Math.round(W / 2 - ctx.textWidth(sub) / 2), 86, COLORS.ink);
   }
 
   private edge(color: string, t: number) {

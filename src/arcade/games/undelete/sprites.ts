@@ -3,6 +3,7 @@
 // (for sprites). Nothing here draws to the screen by itself.
 
 import type { Ability, Perk } from "../../types";
+import type { PropKind, Theme } from "./themes";
 
 // ---------- colors ----------
 
@@ -311,6 +312,44 @@ export const FLOOR_ART = paint(FLOOR, { g: "#2b1d45", f: "#1a1030", F: "#3d2a5e"
 export const CEIL_ART = paint(CEILING, { k: "#0b0614", c: "#160d28" });
 export const CEIL_LIT_ART = paint(CEILING_LIT, { k: "#0b0614", c: "#160d28", L: "#a493c4", l: COLORS.ink });
 
+/** A pixel blended toward `hex` by `k` (0 unchanged). Transparent stays transparent. */
+export function tint(c: number, hex: string, k: number): number {
+  if (!c || k <= 0) return c;
+  const n = parseInt(hex.slice(1), 16);
+  const to = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const r = LITTLE ? c & 255 : (c >>> 24) & 255;
+  const g = LITTLE ? (c >> 8) & 255 : (c >> 16) & 255;
+  const b = LITTLE ? (c >> 16) & 255 : (c >> 8) & 255;
+  const mix = (v: number, i: number) => Math.round(v + (to[i] - v) * k);
+  return pack(mix(r, 0), mix(g, 1), mix(b, 2));
+}
+
+/** A theme's wall textures, floor and ceilings. */
+export function themeArt(t: Theme) {
+  return {
+    walls: WALL_ART.map((p) => mapPixels(p, (c) => tint(c, t.tint, t.amount))),
+    floor: paint(FLOOR, { g: t.floor[0], f: t.floor[1], F: t.floor[2] }),
+    ceil: paint(CEILING, { k: t.ceil[0], c: t.ceil[1] }),
+    ceilLit: paint(CEILING_LIT, { k: t.ceil[0], c: t.ceil[1], L: t.ceil[2], l: t.ceil[3] }),
+  };
+}
+
+/** The average color of a texture (for the minimap). */
+export function meanColor(p: Pixels): number {
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let n = 0;
+  for (const c of p.data) {
+    if (!c) continue;
+    r += LITTLE ? c & 255 : (c >>> 24) & 255;
+    g += LITTLE ? (c >> 8) & 255 : (c >> 16) & 255;
+    b += LITTLE ? (c >> 16) & 255 : (c >> 8) & 255;
+    n++;
+  }
+  return n ? pack(Math.round(r / n), Math.round(g / n), Math.round(b / n)) : 0;
+}
+
 /** Distance fog: each step is one palette shade darker. */
 export const SHADES = [1, 0.8, 0.63, 0.49, 0.37, 0.27, 0.18];
 
@@ -465,10 +504,87 @@ const SYMBOL: Record<Perk, string[]> = {
   points: ["..XX..", ".XXXX.", "..XX.."],
 };
 
-export function cardPixels(perk: Perk): Pixels {
-  const sym = SYMBOL[perk].map((r) => "..." + r + "...");
-  return paint(overlay(CARD, [...Array(11).fill(null), ...sym]), { F: PERK_COLOR[perk], f: COLORS.ink, P: "#1a0d2b", X: COLORS.ink });
+function card(symbol: string[], color: string): Pixels {
+  const sym = symbol.map((r) => "..." + r + "...");
+  return paint(overlay(CARD, [...Array(11).fill(null), ...sym]), { F: color, f: COLORS.ink, P: "#1a0d2b", X: COLORS.ink });
 }
+
+export const cardPixels = (perk: Perk) => card(SYMBOL[perk], PERK_COLOR[perk]);
+
+export type GunKind = "basic" | "spread" | "power" | "beam" | "bounce" | "burst";
+
+export const GUN_COLOR: Record<GunKind, string> = {
+  basic: COLORS.yellow,
+  spread: COLORS.orange,
+  power: COLORS.pink,
+  beam: COLORS.cyan,
+  bounce: COLORS.green,
+  burst: COLORS.red,
+};
+
+const GUN_SYMBOL: Record<GunKind, string[]> = {
+  basic: ["XXXXXX", "X....X", "X....X"],
+  spread: SYMBOL.spread,
+  power: SYMBOL.power,
+  beam: ["X.....", "XXXXXX", "X....."],
+  bounce: ["X...X.", ".X.X.X", "..X..."],
+  burst: ["X.X.X.", "XXXXXX", "X.X.X."],
+};
+
+/** A weapon card: the gun's color, with a ring of white corners so it reads as a weapon, not a file perk. */
+export const gunCardPixels = (gun: GunKind) => {
+  const p = card(GUN_SYMBOL[gun], GUN_COLOR[gun]);
+  const white = px(COLORS.ink);
+  for (const i of [0, p.w - 1, (p.h - 1) * p.w, p.h * p.w - 1]) p.data[i] = white;
+  return p;
+};
+
+// ---------- props: scenery on the floor (10x10) ----------
+
+const PROPS: Record<PropKind, [string[], Record<string, string>]> = {
+  paper: [
+    ["..........", "..........", "..........", "...oooo...", "..owwlwo..", ".owlwwwlo.", ".owwwlwwo.", ".olwwwwlo.", "..ollllo..", "...oooo..."],
+    { o: "#3d2a5e", w: "#d9cdf5", l: "#8a74b8" },
+  ],
+  plant: [
+    ["...g..g...", "..gGg.gG..", ".gGgGgGg..", "..gGgGgGg.", "...gGgGg..", "....gg....", "..oooooo..", "..oppppo..", "...oppo...", "...oooo..."],
+    { g: "#2f8f4f", G: COLORS.green, o: "#3a1a10", p: "#b0601c" },
+  ],
+  cable: [
+    ["..........", "..........", "..........", "...cccc...", "..cCooCc..", ".cCo..oCc.", ".cC....Cc.", ".cCo..oCc.", "..cCooCc..", "...cccc.c."],
+    { c: "#1d5a7a", C: "#3aa8c8", o: "#0a1a2a" },
+  ],
+  drive: [
+    ["..........", "..........", ".oooooooo.", ".ommmmmmo.", ".omGmmRmo.", ".ommmmmmo.", ".okkkkkko.", ".ommmmmmo.", ".omGmmmmo.", ".oooooooo."],
+    { o: "#0a1a2a", m: "#2a4a6a", k: "#123a52", G: COLORS.green, R: COLORS.red },
+  ],
+  box: [
+    ["..........", "..........", ".oooooooo.", ".obbbtbbo.", ".obbbtbbo.", ".oddddddo.", ".obbbbbbo.", ".obbwwbbo.", ".obbbbbbo.", ".oooooooo."],
+    { o: "#3a2a05", b: "#b08a4a", d: "#8a6a10", t: "#d9c08a", w: COLORS.ink },
+  ],
+  stack: [
+    ["..........", "..........", "..........", "..oooooo..", "..owwwwo..", ".oowllwoo.", ".owwwwwwo.", ".ollllllo.", ".owwwwwwo.", ".oooooooo."],
+    { o: "#5a4220", w: "#f0e6c8", l: "#b0a080" },
+  ],
+  peel: [
+    ["..........", "..........", "..........", "....yo....", "...yYo....", "..yYyoy...", ".yY.yYYy..", "yY..yYy.Yy", "y..yYYYy.y", "...oooo..."],
+    { y: "#b08612", Y: COLORS.yellow, o: "#3a2a05" },
+  ],
+  barrel: [
+    ["..oooooo..", ".oGGGGGGo.", ".ommmmmmo.", ".oGGGGGGo.", ".ommxxmmo.", ".omxxxxmo.", ".ommxxmmo.", ".oGGGGGGo.", ".ommmmmmo.", "..oooooo.."],
+    { o: "#0d2418", G: "#6ba84a", m: "#2f5a22", x: COLORS.yellow },
+  ],
+  crystal: [
+    ["....W.....", "....Wc....", "...WcC....", "...WcC..W.", "..WccC.WcC", "..WcCC.WC.", ".WccCC.WC.", ".WcCCCWcC.", "oooooooooo", ".........."],
+    { W: COLORS.ink, c: "#b8f4ff", C: "#4da8d8", o: "#16233a" },
+  ],
+  drift: [
+    ["..........", "..........", "..........", "..........", "....WW....", "..WWWWWc..", ".WWWWWWWc.", "WWWcWWWWWc", "WWWWWWcWWW", "cccccccccc"],
+    { W: "#e8f4ff", c: "#86b8d8" },
+  ],
+};
+
+export const propPixels = (kind: PropKind) => paint(...PROPS[kind]);
 
 // ---------- shots and effects ----------
 
@@ -604,6 +720,42 @@ const SPREAD_LEFT = overlay(GUN_LEFT, [
   "........ohho....",
 ]);
 
+const BEAM_LEFT = overlay(GUN_LEFT, [
+  "............oooo",
+  "............oQQQ",
+  "............oQWW",
+  "...........ooQWW",
+  "...........oqQQQ",
+  "...........oqqqq",
+  "...........oqQQQ",
+  "...........oqqqq",
+  "...........oqQQQ",
+]);
+
+const BOUNCE_LEFT = overlay(GUN_LEFT, [
+  "..........oooooo",
+  ".........oNNNNNN",
+  "........oNnnnnnn",
+  "........oNnSSSSS",
+  "........oNnSSSSS",
+  "........oNnnnnnn",
+  ".........oNNNNNN",
+  "..........oNnNnN",
+  "..........oooooo",
+]);
+
+const BURST_LEFT = overlay(GUN_LEFT, [
+  "....oooooooooooo",
+  "...oRRRRRRRRRRRR",
+  "...oRrrrrrrrrrrr",
+  "...oRrSWSWSWSWSW",
+  "...oRrSSSSSSSSSS",
+  "...oRrSWSWSWSWSW",
+  "...oRrrrrrrrrrrr",
+  "....oRRRRRRRRRRR",
+  ".....ooooooooooo",
+]);
+
 const POWER_LEFT = overlay(GUN_LEFT, [
   ".........ooooooo",
   "........oPPPPPPP",
@@ -616,11 +768,11 @@ const POWER_LEFT = overlay(GUN_LEFT, [
   "........oPPPPPPP",
 ]);
 
-export type GunKind = "basic" | "spread" | "power";
+const GUN_ROWS: Record<GunKind, string[]> = { basic: GUN_LEFT, spread: SPREAD_LEFT, power: POWER_LEFT, beam: BEAM_LEFT, bounce: BOUNCE_LEFT, burst: BURST_LEFT };
 
 export function gunPixels(kind: GunKind, rapid: boolean): Pixels {
-  const rows = mirror(kind === "power" ? POWER_LEFT : kind === "spread" ? SPREAD_LEFT : GUN_LEFT);
-  const stripe = kind === "power" ? COLORS.pink : kind === "spread" ? COLORS.orange : COLORS.cyan;
+  const rows = mirror(GUN_ROWS[kind]);
+  const stripe = kind === "basic" ? COLORS.cyan : GUN_COLOR[kind];
   return paint(rows, {
     o: COLORS.night,
     y: COLORS.yellow,
@@ -636,6 +788,12 @@ export function gunPixels(kind: GunKind, rapid: boolean): Pixels {
     p: COLORS.pink,
     Y: COLORS.yellow,
     W: COLORS.ink,
+    Q: COLORS.cyan,
+    q: "#1d5a7a",
+    N: COLORS.green,
+    n: "#2f8f4f",
+    R: COLORS.red,
+    r: "#a32640",
   });
 }
 
