@@ -77,6 +77,7 @@ pub fn run() {
             commands::redo,
             commands::journal_state,
             commands::history,
+            commands::revive_plan,
             commands::get_settings,
             commands::set_setting,
             commands::user_themes,

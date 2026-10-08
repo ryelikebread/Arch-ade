@@ -22,6 +22,7 @@ export const api = {
   redo: () => invoke<RunReport | null>("redo"),
   journalState: () => invoke<{ canUndo: boolean; canRedo: boolean; undoPlanId: number | null }>("journal_state"),
   history: () => invoke<PlanSummary[]>("history"),
+  revivePlan: (id: number) => invoke<PlanOut>("revive_plan", { id }),
   getSettings: () => invoke<Record<string, unknown>>("get_settings"),
   setSetting: (key: string, value: unknown) => invoke<void>("set_setting", { key, value }),
   userThemes: () => invoke<unknown[]>("user_themes"),

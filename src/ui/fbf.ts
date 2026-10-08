@@ -24,6 +24,8 @@ export interface FbfOptions {
   root: string;
   isMac: boolean;
   dryRun: boolean;
+  /** Dry run was switched from the summary (the main window follows). */
+  onDryRun?: (on: boolean) => void;
   /** Something on disk changed (refresh the main list when the session ends). */
   onChanged: () => void;
   onClose: () => void;
@@ -43,6 +45,8 @@ export async function fileByFile(o: FbfOptions) {
   let picks = quickPicks(recent, subfolders);
   let changed = false;
   let busy = false;
+  // Can be turned off on the summary to apply a dry-run batch for real.
+  let dryRun = o.dryRun;
 
   // ---------- layout ----------
   const progressText = h("span", { class: "fbf-progress-text" });
@@ -54,7 +58,7 @@ export async function fileByFile(o: FbfOptions) {
   const nameEl = h("div", { class: "fbf-name" });
   const stateEl = h("div", { class: "fbf-state" });
   const noteEl = h("div", { class: "fbf-note" });
-  const dryEl = o.dryRun ? h("div", { class: "fbf-dry" }, "Dry run is on: decisions are shown, files don't change.") : null;
+  const dryEl = h("div", { class: "fbf-dry", hidden: !o.dryRun }, "Dry run is on: decisions are shown, files don't change.");
   const slotsEl = h("div", { class: "fbf-slots" });
   const btn = (label: string, key: string, onclick: () => void, cls = "") =>
     h("button", { class: cls, onclick, title: key }, label, h("kbd", {}, key));
@@ -147,7 +151,15 @@ export async function fileByFile(o: FbfOptions) {
     slotsEl.replaceChildren(
       h("span", { class: "note" }, picks.length ? "Quick move:" : "Quick move: press M to pick a folder; it's remembered here."),
       ...picks.map((p, i) => h("button", { class: "slot", title: p, onclick: () => run({ do: "quick", slot: i + 1 }) }, h("kbd", {}, String(i + 1)), baseName(p))),
+      ...(recent.length ? [h("button", { class: "slot-reset", title: "Forget the folders you picked; the open folder's subfolders stay", onclick: resetSlots }, "Reset")] : []),
     );
+  }
+
+  function resetSlots() {
+    recent = [];
+    api.setSetting("fbfRecent", recent).catch(() => {});
+    renderSlots();
+    note("Quick moves reset.");
   }
 
   function render() {
@@ -186,8 +198,61 @@ export async function fileByFile(o: FbfOptions) {
     preview.clear();
     preview.el.querySelector(".body")?.replaceChildren(
       h("p", {}, `${session.items.length} file(s): ${c.keep} kept, ${c.move} moved, ${c.rename} renamed, ${c.trash} trashed, ${c.delete} deleted permanently.`),
+      dryRunControls(),
       h("table", { class: "list" }, h("tr", {}, h("th", {}, "File"), h("th", {}, "Decision"), h("th", {}, "")), ...rows),
     );
+  }
+
+  // ---------- dry run on the summary ----------
+  /** Dry-run decisions that can still be done for real (permanent deletes need their own confirmation). */
+  const pending = () => session.results().filter(({ record }) => record.dryRun && record.decision && record.action !== "delete");
+
+  function setDryRun(on: boolean) {
+    dryRun = on;
+    dryEl.hidden = !on;
+    o.onDryRun?.(on);
+    renderSummary();
+  }
+
+  function dryRunControls(): Node {
+    const n = pending().length;
+    const toggle = h("button", { onclick: () => setDryRun(!dryRun) }, dryRun ? "Dry run: ON (turn off)" : "Dry run: OFF (turn on)");
+    const apply = !dryRun && n
+      ? h("button", { class: "primary", onclick: () => applyForReal() }, `Do these ${n} decision${n === 1 ? "" : "s"} for real`)
+      : null;
+    const hint = dryRun && n ? h("span", { class: "note" }, " Turn dry run off to do these decisions for real.") : null;
+    return h("p", { class: "fbf-dryrun" }, toggle, " ", apply, hint);
+  }
+
+  /** Apply each dry-run decision now, as its own journaled plan (so Undo still goes one file at a time). */
+  async function applyForReal() {
+    if (busy || dryRun) return;
+    busy = true;
+    const failed: string[] = [];
+    let done = 0;
+    for (const { entry, record } of pending()) {
+      try {
+        const out: PlanOut = await api.planOne(entry.path, record.decision!);
+        if (out.id == null) {
+          failed.push(`${entry.name}: ${out.plan.issues.map((i) => i.message).join("; ") || "nothing to do"}`);
+          continue;
+        }
+        const r = await api.applyPlan(out.id);
+        if (r.done > 0) changed = true;
+        if (r.error) {
+          failed.push(`${entry.name}: ${r.error}`);
+          if (r.done === 0) continue;
+        }
+        const to = [...out.plan.ops].reverse().find((op) => op.type === "move");
+        session.replace(entry, { ...record, planId: out.id, dryRun: false, to: to && to.type === "move" ? to.to : undefined });
+        done++;
+      } catch (e) {
+        failed.push(`${entry.name}: ${e}`);
+      }
+    }
+    busy = false;
+    renderSummary();
+    note(`Did ${done} decision${done === 1 ? "" : "s"} for real.${failed.length ? ` Not done: ${failed.join(" · ")}` : ""}`, failed.length > 0);
   }
 
   // ---------- decisions ----------
@@ -209,8 +274,8 @@ export async function fileByFile(o: FbfOptions) {
       const extra = out.plan.issues.filter((i) => !i.blocking).map((i) => i.message);
       const to = [...out.plan.ops].reverse().find((op) => op.type === "move");
       const captions = { name: e.name, kind: e.kindLabel, newName: detail, dest: detail };
-      if (o.dryRun) {
-        session.record({ action, planId: null, dryRun: true, detail });
+      if (dryRun) {
+        session.record({ action, planId: null, dryRun: true, detail, decision: decision ?? undefined });
         note(`Dry run: ${WOULD[action].toLowerCase()} ${e.name}${detail ? ` (${detail})` : ""}.${extra.length ? ` ${extra.join("; ")}.` : ""}`);
       } else {
         const r = await api.applyPlan(out.id);

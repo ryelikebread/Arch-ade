@@ -88,6 +88,13 @@ main { display: grid; grid-template-columns: 1fr var(--preview-w, 420px); min-he
 
 /* Preview pane */
 .preview { display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+.preview-head { display: flex; align-items: center; gap: 6px; border-bottom: var(--px) solid var(--grid); }
+.preview-head h2 { flex: 1 1 auto; border-bottom: 0 !important; }
+.preview-full { margin-right: 8px; flex: 0 0 auto; }
+.preview.full { position: fixed; inset: 0; z-index: 50; }
+.preview.full .preview-image img { max-height: calc(100vh - 160px); }
+.preview.full iframe { height: calc(100vh - 200px); }
+.preview.full .details { max-height: 20vh; }
 .preview h2 { font: 12px var(--pixel-font); margin: 0; padding: 8px 10px; border-bottom: var(--px) solid var(--grid); overflow-wrap: anywhere; text-transform: uppercase; }
 .preview .body { flex: 1 1 auto; overflow: auto; padding: 10px; min-height: 80px; user-select: text; }
 .preview .details { flex: 0 0 auto; border-top: var(--px) solid var(--grid); padding: 8px 10px; max-height: 40vh; overflow: auto; font-size: 12px; user-select: text; }

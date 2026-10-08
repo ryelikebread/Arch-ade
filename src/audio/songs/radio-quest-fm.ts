@@ -1,0 +1,70 @@
+// Quest FM: cheerful 8-bit overworld music. Original, CC0 (see MUSIC_CREDITS.md).
+import type { Song } from "../music";
+
+const station = "Quest FM";
+
+export const songs: Song[] = [
+  {
+    id: "over-the-next-hill",
+    title: "Over the Next Hill",
+    station,
+    bpm: 136,
+    lead: { wave: "square", vol: 0.12, duty: 0.5 },
+    harmony: { wave: "square", vol: 0.06, duty: 0.25 },
+    bass: "eighths",
+    arpEvery: 0,
+    drums: "basic",
+    bars: [
+      { chord: "D", lead: "D5:2 F#5:2 A5:4 F#5:2 A5:2 D6:4", harmony: "F#4:8 A4:8" },
+      { chord: "G", lead: "B5:3 A5:1 G5:2 B5:2 D6:6 -:2", harmony: "G4:8 B4:8" },
+      { chord: "A", lead: "C#6:2 B5:2 A5:2 E5:2 A5:4 C#6:4", harmony: "A4:8 E5:8" },
+      { chord: "D", lead: "D6:8 A5:4 F#5:4", harmony: "F#5:8 D5:8" },
+      { chord: "Bm", lead: "B5:2 C#6:2 D6:4 F#6:4 D6:4", harmony: "D5:8 F#5:8" },
+      { chord: "G", lead: "G6:4 F#6:2 E6:2 D6:4 B5:4", harmony: "B5:8 G5:8" },
+      { chord: "A", lead: "A5:2 B5:2 C#6:2 D6:2 E6:4 C#6:4", harmony: "C#5:8 E5:8" },
+      { chord: "D", lead: "D6:6 A5:2 D6:4 -:4", harmony: "F#5:6 E5:2 F#5:4 -:4" },
+    ],
+  },
+  {
+    id: "village-market",
+    title: "Village Market",
+    station,
+    bpm: 120,
+    lead: { wave: "square", vol: 0.13, duty: 0.25 },
+    bass: "eighths",
+    arpEvery: 2,
+    drums: "basic",
+    swing: 0.33,
+    bars: [
+      { chord: "F", lead: "A5:2 C6:2 A5:2 F5:2 G5:2 A5:2 C6:4" },
+      { chord: "C", lead: "G5:2 E5:2 C5:4 E5:2 G5:2 C6:4" },
+      { chord: "Dm", lead: "D6:2 C6:2 A5:2 F5:2 D5:4 A5:4" },
+      { chord: "Bb", lead: "Bb5:4 D6:2 C6:2 Bb5:2 A5:2 G5:4" },
+      { chord: "F", lead: "F5:2 A5:2 C6:2 F6:2 E6:2 C6:2 A5:4" },
+      { chord: "Bb", lead: "D6:4 Bb5:2 F5:2 D6:4 C6:4" },
+      { chord: "C", lead: "C6:2 D6:2 C6:2 Bb5:2 A5:2 G5:2 E5:4" },
+      { chord: "F", lead: "F5:8 C5:4 F5:4" },
+    ],
+  },
+  {
+    id: "lantern-cave",
+    title: "Lantern Cave",
+    station,
+    bpm: 112,
+    lead: { wave: "triangle", vol: 0.3 },
+    harmony: { wave: "square", vol: 0.05, duty: 0.125 },
+    bass: "eighths",
+    arpEvery: 2,
+    drums: "basic",
+    bars: [
+      { chord: "Em", lead: "E5:2 F#5:2 G5:4 B5:4 A5:2 G5:2", harmony: "B4:16" },
+      { chord: "D", lead: "F#5:4 D5:4 A5:6 -:2", harmony: "A4:16" },
+      { chord: "C", lead: "G5:2 E5:2 G5:2 C6:2 B5:4 G5:4", harmony: "G4:16" },
+      { chord: "B", lead: "F#5:8 D#5:4 B4:4", harmony: "B4:16" },
+      { chord: "Em", lead: "B5:2 C6:2 B5:2 A5:2 G5:4 E5:4", harmony: "G4:16" },
+      { chord: "D", lead: "A5:2 B5:2 A5:2 F#5:2 D5:4 F#5:4", harmony: "F#4:16" },
+      { chord: "C", lead: "E5:4 G5:4 C6:4 E6:4", harmony: "C5:16" },
+      { chord: "B", lead: "D#6:8 B5:4 F#5:4", harmony: "B4:16" },
+    ],
+  },
+];

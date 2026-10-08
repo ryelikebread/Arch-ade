@@ -1,0 +1,73 @@
+// Study Hall: lo-fi beats to sort files to. Original, CC0 (see MUSIC_CREDITS.md).
+import type { Song } from "../music";
+
+const station = "Study Hall";
+
+export const songs: Song[] = [
+  {
+    id: "margin-notes",
+    title: "Margin Notes",
+    station,
+    bpm: 80,
+    lead: { wave: "triangle", vol: 0.26 },
+    bass: "lazy",
+    arpEvery: 2,
+    arp: { wave: "triangle", vol: 0.06, octave: 4 },
+    drums: "lofi",
+    swing: 0.3,
+    bars: [
+      { chord: "F", lead: "A5:6 G5:2 F5:4 C5:4" },
+      { chord: "Em", lead: "B4:4 E5:4 G5:6 -:2" },
+      { chord: "Dm", lead: "F5:4 A5:2 G5:2 F5:4 D5:4" },
+      { chord: "C", lead: "E5:12 -:4" },
+      { chord: "Bb", lead: "D5:2 F5:2 Bb5:4 A5:4 F5:4" },
+      { chord: "Am", lead: "E5:6 C5:2 A4:8" },
+      { chord: "Gm", lead: "Bb4:4 D5:4 G5:4 F5:4" },
+      { chord: "C", lead: "E5:8 -:4 G4:4" },
+    ],
+  },
+  {
+    id: "rainy-window",
+    title: "Rainy Window",
+    station,
+    bpm: 74,
+    lead: { wave: "sine", vol: 0.26 },
+    bass: "lazy",
+    arpEvery: 2,
+    arp: { wave: "triangle", vol: 0.06, octave: 4 },
+    drums: "lofi",
+    swing: 0.3,
+    bars: [
+      { chord: "Am", lead: "C6:4 B5:2 A5:2 E5:8" },
+      { chord: "Em", lead: "G5:4 B5:4 E5:6 -:2" },
+      { chord: "F", lead: "A5:6 C6:2 F5:8" },
+      { chord: "C", lead: "E5:4 G5:4 C6:4 -:4" },
+      { chord: "Dm", lead: "F5:4 A5:4 D6:6 C6:2" },
+      { chord: "Am", lead: "C6:4 A5:4 E5:8" },
+      { chord: "E", lead: "G#5:4 B5:4 E6:4 D6:4" },
+      { chord: "Am", lead: "C6:12 -:4" },
+    ],
+  },
+  {
+    id: "snooze-button",
+    title: "Snooze Button",
+    station,
+    bpm: 84,
+    lead: { wave: "triangle", vol: 0.26 },
+    bass: "lazy",
+    arpEvery: 2,
+    arp: { wave: "sine", vol: 0.05, octave: 5 },
+    drums: "lofi",
+    swing: 0.3,
+    bars: [
+      { chord: "G", lead: "D5:4 G5:2 A5:2 B5:4 A5:2 G5:2" },
+      { chord: "Bm", lead: "F#5:8 D5:4 B4:4" },
+      { chord: "Em", lead: "G5:4 B5:2 A5:2 G5:4 E5:4" },
+      { chord: "C", lead: "E5:6 D5:2 C5:8" },
+      { chord: "Am", lead: "C5:2 E5:2 A5:4 G5:2 E5:2 C5:4" },
+      { chord: "D", lead: "D5:4 F#5:4 A5:6 -:2" },
+      { chord: "G", lead: "B5:6 A5:2 G5:4 D5:4" },
+      { chord: "D", lead: "F#5:6 E5:2 D5:4 -:4" },
+    ],
+  },
+];

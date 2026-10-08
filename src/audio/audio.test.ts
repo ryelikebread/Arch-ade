@@ -50,9 +50,9 @@ describe("songs", () => {
       expect(peak, song.title).toBeLessThanOrEqual(1);
     }
   });
-  it("one station per song plus My Music", () => {
+  it("one station per station name plus My Music", () => {
     const list = stations();
-    expect(list.length).toBe(SONGS.length + 1);
+    expect(list.length).toBe(new Set(SONGS.map((s) => s.station)).size + 1);
     expect(new Set(list.map((s) => s.id)).size).toBe(list.length);
     expect(list[list.length - 1].id).toBe(MY_MUSIC);
     expect(stepStation(list[0].id, -1)).toBe(MY_MUSIC);

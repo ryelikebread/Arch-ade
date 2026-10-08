@@ -212,21 +212,88 @@ export async function dupesDialog(entries: FileEntry[], onTrash: (paths: string[
   });
 }
 
-export async function historyDialog() {
-  const list = await api.history();
-  const content = list.length
-    ? h(
-        "table",
-        { class: "list" },
-        h("tr", {}, h("th", {}, "When"), h("th", {}, "What"), h("th", {}, "Steps"), h("th", {}, "State")),
-        ...list.map((p) =>
-          h("tr", {}, h("td", {}, formatDate(p.appliedAt ?? p.created)), h("td", {}, p.label), h("td", {}, String(p.opCount)),
-            h("td", { class: p.status === "applied" || p.status === "final" ? "status-ok" : p.status === "undone" ? "status-same" : "status-bad" },
-              p.status === "final" ? "done (can't be undone)" : p.status)),
-        ),
-      )
-    : h("p", { class: "note" }, "No changes yet.");
-  modal({ title: "History", content });
+const STATE: Record<string, string> = {
+  applied: "applied",
+  undone: "undone",
+  final: "done (can't be undone)",
+  expired: "never applied",
+  discarded: "undone (replaced)",
+  interrupted: "interrupted",
+};
+
+/**
+ * Everything applied, undone or reviewed. Plans that were reviewed but never
+ * applied (often in dry run) changed nothing, so there's nothing to undo:
+ * they're hidden unless asked for, and can be reviewed again against the
+ * files as they are now.
+ */
+export async function historyDialog(o: { onReview: (out: PlanOut) => void; onRun: (r: RunReport) => void }) {
+  let list = await api.history();
+  let showNever = false;
+  let busy = false;
+  const body = h("div", {});
+  const left = h("span", {});
+  const m = modal({ title: "History", content: body, left });
+
+  async function undoTo(id: number) {
+    busy = true;
+    render();
+    try {
+      // Undo goes newest first; keep going until this plan is undone.
+      for (let i = 0; i < 500; i++) {
+        const st = await api.journalState();
+        if (st.undoPlanId == null) break;
+        const r = await api.undo();
+        if (!r) break;
+        o.onRun(r);
+        if (r.error || st.undoPlanId === id) break;
+      }
+    } catch (e) {
+      left.textContent = String(e);
+    }
+    busy = false;
+    list = await api.history();
+    render();
+  }
+
+  async function review(id: number) {
+    try {
+      const out = await api.revivePlan(id);
+      m.close();
+      o.onReview(out);
+    } catch (e) {
+      left.textContent = String(e);
+    }
+  }
+
+  function render() {
+    const never = list.filter((p) => p.status === "expired").length;
+    const rows = list.filter((p) => showNever || p.status !== "expired");
+    const action = (p: (typeof list)[number]) =>
+      p.status === "expired"
+        ? h("button", { disabled: busy, title: "Check it against your files as they are now, then review it", onclick: () => review(p.id) }, "Review again")
+        : p.status === "applied"
+          ? h("button", { disabled: busy, title: "Undo everything from the newest change back to this one", onclick: () => undoTo(p.id) }, "Undo back to here")
+          : "";
+    const toggle = h("input", { type: "checkbox", checked: showNever, onchange: () => ((showNever = toggle.checked), render()) });
+    body.replaceChildren(
+      ...(never ? [h("label", { class: "note" }, toggle, ` Show plans that were reviewed but never applied (${never}). They changed nothing, so there's nothing to undo; Review again can still apply one.`)] : []),
+      rows.length
+        ? h(
+            "table",
+            { class: "list" },
+            h("tr", {}, h("th", {}, "When"), h("th", {}, "What"), h("th", {}, "Steps"), h("th", {}, "State"), h("th", {}, "")),
+            ...rows.map((p) =>
+              h("tr", {}, h("td", {}, formatDate(p.appliedAt ?? p.created)), h("td", {}, p.label), h("td", {}, String(p.opCount)),
+                h("td", { class: p.status === "applied" || p.status === "final" ? "status-ok" : p.status === "undone" || p.status === "expired" || p.status === "discarded" ? "status-same" : "status-bad" },
+                  STATE[p.status] ?? p.status),
+                h("td", {}, action(p))),
+            ),
+          )
+        : h("p", { class: "note" }, "No changes yet."),
+    );
+  }
+  render();
 }
 
 export function helpDialog(isMac: boolean) {

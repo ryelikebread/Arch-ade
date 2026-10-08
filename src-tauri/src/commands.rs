@@ -326,6 +326,13 @@ pub fn history(state: State<'_, Shared>) -> Res<Vec<PlanSummary>> {
     Journal::new(&state.db, &state.scope, platform::current()).history(200)
 }
 
+/// A plan that never ran, checked again against the files as they are now.
+#[tauri::command]
+pub fn revive_plan(state: State<'_, Shared>, id: i64) -> Res<PlanOut> {
+    let s = state.inner();
+    save(s, Journal::new(&s.db, &s.scope, platform::current()).revive(id)?)
+}
+
 #[tauri::command]
 pub fn get_settings(state: State<'_, Shared>) -> Res<serde_json::Map<String, serde_json::Value>> {
     state.db.all_settings()

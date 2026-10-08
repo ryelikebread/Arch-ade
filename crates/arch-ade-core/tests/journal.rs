@@ -242,3 +242,40 @@ fn trash_listing() -> String {
 fn trash_listing() -> String {
     String::new()
 }
+
+#[test]
+fn expired_plan_can_be_reviewed_again() {
+    let e = env(&[("a.txt", "A"), ("b.txt", "B")]);
+    let j = Journal::new(&e.db, &e.scope, &e.fake);
+    let plan = Planner::new(&e.scope, NameRules::Linux).moves(&[(e.root.join("a.txt"), e.root.join("x/a.txt"))], "mv");
+    let id = j.save(&plan).unwrap();
+    j.recover_interrupted().unwrap(); // a restart: the unapplied plan expires
+    assert_eq!(j.load(id).unwrap().1, "expired");
+    assert!(j.apply(id).is_err(), "an expired plan isn't applied as is");
+
+    let again = j.revive(id).unwrap();
+    assert!(!again.is_blocked(), "{:?}", again.issues);
+    let id2 = j.save(&again).unwrap();
+    assert_eq!(j.apply(id2).unwrap().status, "applied");
+    assert_eq!(read(&e.root.join("x/a.txt")), "A");
+    assert!(j.revive(id2).is_err(), "only plans that never ran");
+}
+
+#[test]
+fn reviving_checks_the_files_as_they_are_now() {
+    let e = env(&[("a.txt", "A"), ("b.txt", "B"), ("c.txt", "C")]);
+    let j = Journal::new(&e.db, &e.scope, &e.fake);
+    let p = Planner::new(&e.scope, NameRules::Linux);
+    let changed = j.save(&p.trash(&[e.root.join("a.txt")], "t")).unwrap();
+    let gone = j.save(&p.trash(&[e.root.join("b.txt")], "t")).unwrap();
+    let taken = j.save(&p.moves(&[(e.root.join("c.txt"), e.root.join("d.txt"))], "mv")).unwrap();
+    j.recover_interrupted().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(e.root.join("a.txt"), "AA").unwrap();
+    std::fs::remove_file(e.root.join("b.txt")).unwrap();
+    std::fs::write(e.root.join("d.txt"), "D").unwrap();
+    let msg = |id| j.revive(id).unwrap().issues.iter().map(|i| i.message.clone()).collect::<Vec<_>>().join("; ");
+    assert!(msg(changed).contains("changed"), "{}", msg(changed));
+    assert!(msg(gone).contains("gone"), "{}", msg(gone));
+    assert!(msg(taken).contains("already exists"), "{}", msg(taken));
+}

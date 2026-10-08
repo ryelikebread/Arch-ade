@@ -1,6 +1,6 @@
 // File-by-File session state, kept free of the DOM so it can be tested.
 
-import type { FileEntry } from "../types";
+import type { Decision, FileEntry } from "../types";
 import type { KeyLike } from "./hotkeys";
 
 export type FbfAction = "keep" | "move" | "rename" | "trash" | "delete";
@@ -14,6 +14,8 @@ export interface FbfRecord {
   to?: string;
   /** Folder name or new name, for captions and the summary. */
   detail?: string;
+  /** What was decided, kept for dry runs so they can be applied for real later. */
+  decision?: Decision;
 }
 
 export class FbfSession {
@@ -63,6 +65,15 @@ export class FbfSession {
   }
 
   /** The most recent decision, without changing anything. */
+  /** Swap a decision's record (a dry run done for real); it becomes the newest for Undo. */
+  replace(entry: FileEntry, rec: FbfRecord) {
+    const i = this.items.indexOf(entry);
+    if (i < 0 || !this.decided.has(i)) return;
+    this.decided.set(i, rec);
+    this.order = this.order.filter((x) => x !== i);
+    this.order.push(i);
+  }
+
   last(): { index: number; record: FbfRecord } | null {
     const i = this.order[this.order.length - 1];
     return i === undefined ? null : { index: i, record: this.decided.get(i)! };

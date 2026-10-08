@@ -29,9 +29,22 @@ export class PreviewPane {
   private details = h("div", { class: "details" });
   private seq = 0;
 
-  constructor() {
-    this.el = h("aside", { class: "preview" }, this.title, this.body, this.details);
+  private fullBtn = h("button", { class: "preview-full", title: "Full screen (Space; Esc to leave)", onclick: () => this.toggleFull() }, "Full screen");
+
+  /** `fullScreen`: offer the full-screen button (the main window). */
+  constructor(opts: { fullScreen?: boolean } = {}) {
+    this.el = h("aside", { class: "preview" }, h("div", { class: "preview-head" }, this.title, ...(opts.fullScreen ? [this.fullBtn] : [])), this.body, this.details);
     this.clear();
+  }
+
+  get full(): boolean {
+    return this.el.classList.contains("full");
+  }
+
+  /** Fill the window with the preview; arrow keys keep moving through files. */
+  toggleFull(on = !this.full) {
+    this.el.classList.toggle("full", on);
+    this.fullBtn.textContent = on ? "Exit full screen" : "Full screen";
   }
 
   clear(message = "Select a file to preview it.") {
