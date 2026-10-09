@@ -1,6 +1,6 @@
 # Music and sound credits
 
-Everything Arch-ade plays out of the box is original and made for Arch-ade. Nothing is
+Everything Retro Arch-ade plays out of the box is original and made for Arch-ade. Nothing is
 sampled, downloaded or adapted from other music.
 
 | Station | Track | How it's made | License |
