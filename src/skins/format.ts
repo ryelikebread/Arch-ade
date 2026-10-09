@@ -102,6 +102,18 @@ export interface SkinManifest {
   sounds?: Partial<Record<SkinEvent, Cue[]>>;
   /** A built-in song id to play while this skin is on (when music is playing). */
   music?: string;
+  /**
+   * A bonus animation after every `every`-th decision in `on` (one of
+   * `animations`, picked at random), played right after that decision's own.
+   * Example: after every 5th move the crew escapes in the van.
+   */
+  encore?: Encore;
+}
+
+export interface Encore {
+  on: SkinEvent[];
+  every: number;
+  animations: Animation[];
 }
 
 const COLOR = /^#([0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -207,6 +219,13 @@ export function validateSkin(raw: unknown): SkinManifest | string[] {
         else list.forEach((a, i) => checkAnim(`${ev} variant ${i + 1}`, a as Animation));
       }
   }
+  if (m.encore !== undefined) {
+    const e = m.encore as Encore;
+    if (!e || !Array.isArray(e.on) || !e.on.length || !e.on.every((v) => SKIN_EVENTS.includes(v))) errs.push("encore.on must list actions");
+    if (!e || !int(e.every, 1, 100)) errs.push("encore.every must be a whole number 1..100");
+    if (!e || !Array.isArray(e.animations) || e.animations.length < 1 || e.animations.length > 8) errs.push("encore.animations must be a list of 1..8 animations");
+    else e.animations.forEach((a, i) => checkAnim(`encore ${i + 1}`, a));
+  }
   if (m.music !== undefined && (typeof m.music !== "string" || !/^[a-z0-9-]{1,40}$/.test(m.music))) errs.push("music must be a song id");
   if (m.sounds !== undefined) {
     const sounds = m.sounds as Record<string, unknown>;
@@ -287,6 +306,15 @@ export function animationFor(m: SkinManifest, event: SkinEvent, pick: number): {
   const anim = all[Math.min(all.length - 1, Math.floor(pick * all.length))];
   const cues = anim.sounds ?? m.sounds?.[event] ?? (event === "delete" ? m.sounds?.trash : undefined) ?? [];
   return { anim, cues };
+}
+
+/** The encore due after a decision, given the counts including it: picked by `pick` (0..1), or null. */
+export function encoreFor(m: SkinManifest, event: SkinEvent, counts: Partial<Record<SkinEvent, number>>, pick: number): Animation | null {
+  const e = m.encore;
+  if (!e || !e.on.includes(event)) return null;
+  const n = e.on.reduce((a, v) => a + (counts[v] ?? 0), 0);
+  if (n <= 0 || n % e.every !== 0) return null;
+  return e.animations[Math.min(e.animations.length - 1, Math.floor(pick * e.animations.length))];
 }
 
 export function caption(template: string, c: Captions): string {
