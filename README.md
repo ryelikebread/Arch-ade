@@ -4,6 +4,8 @@ A local-only desktop app for browsing, previewing and organizing the files in a 
 with an 8-bit pixel look. macOS, Windows and Linux from one codebase (Tauri 2 + Rust +
 TypeScript, SQLite for state). Nothing leaves the machine.
 
+**Conceived, Prompted, and Refined by Rye Bread & Developed by Claude**
+
 > Working name. The display name lives in `crates/arch-ade-core/src/config.rs`
 > (`APP_NAME`) plus `productName`/`identifier` in `src-tauri/tauri.conf.json`.
 
