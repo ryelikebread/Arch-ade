@@ -330,7 +330,7 @@ function review(out: PlanOut) {
   }, () => {
     toggleDryRun();
     review({ ...out, dryRun: state.dryRun });
-  });
+  }, (path) => before.find((e) => e.path === path));
 }
 
 async function doTrash(paths?: string[]) {

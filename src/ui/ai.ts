@@ -9,6 +9,7 @@ import { addSubcategory, duplicateWhitelist, emptyCategory, mergeSubcategories, 
 import { formatSize } from "../lib/format";
 import type { AiProgress, AiSettings, FileEntry, PlanOut, Suggestion, Whitelist } from "../types";
 import { h, modal } from "./dom";
+import { entryFor, reviewPreview } from "./review-preview";
 
 export interface AiContext {
   root: string | null;
@@ -60,7 +61,19 @@ export async function categorizeDialog(ctx: AiContext) {
     }
   } }, "Change…");
   const statusEl = h("p", { class: "note" }, aiStatus(settings));
-  const progress = h("span", {});
+  const barFill = h("div", { class: "pbar-fill" });
+  const barLabel = h("span", { class: "pbar-label" });
+  const bar = h("div", { class: "pbar", hidden: true, role: "progressbar", "aria-valuemin": 0 }, barFill, barLabel);
+  const setBar = (done: number, total: number, label?: string) => {
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    bar.hidden = false;
+    bar.classList.toggle("done", label !== undefined);
+    bar.setAttribute("aria-valuemax", String(total));
+    bar.setAttribute("aria-valuenow", String(done));
+    barFill.style.width = `${pct}%`;
+    barLabel.textContent = label ?? `${done} / ${total} · ${pct}%`;
+  };
+  const byPath = new Map(files.map((f) => [f.path, f]));
   const errEl = h("div", { class: "warn" });
   const tbody = h("tbody");
   const count = h("span", {});
@@ -122,7 +135,7 @@ export async function categorizeDialog(ctx: AiContext) {
         } }, "+ whitelist")
       : null;
     const why = [row.s.reason, row.s.warning].filter(Boolean).join(" · ");
-    return h("tr", {},
+    return h("tr", { "data-path": row.s.path },
       h("td", {}, cb),
       h("td", { title: row.s.path }, row.s.name, row.s.screenshot ? h("span", { class: "tag" }, "screenshot") : null),
       settings.renameOnly ? null : h("td", {}, catSel),
@@ -158,7 +171,7 @@ export async function categorizeDialog(ctx: AiContext) {
     errEl.textContent = "";
     statusEl.textContent = aiStatus(settings);
     suggestBtn.textContent = "Stop";
-    progress.textContent = `0 / ${files.length}`;
+    setBar(0, files.length);
     updateCount();
     try {
       await api.aiSaveSettings(settings);
@@ -166,7 +179,7 @@ export async function categorizeDialog(ctx: AiContext) {
       errEl.textContent = String(e);
     }
     const unlisten = await listen<AiProgress>("ai-progress", (ev) => {
-      progress.textContent = `${ev.payload.done} / ${ev.payload.total}`;
+      setBar(ev.payload.done, ev.payload.total);
       if (ev.payload.suggestion) addRow(ev.payload.suggestion);
     });
     try {
@@ -178,7 +191,7 @@ export async function categorizeDialog(ctx: AiContext) {
         out.suggestions.forEach(addRow);
       }
       if (out.aiError) errEl.textContent = `AI not used: ${out.aiError}. Showing suggestions without it.`;
-      progress.textContent = out.cancelled ? `Stopped after ${rows.length}` : `${rows.length} file(s)`;
+      setBar(out.cancelled ? rows.length : files.length, files.length, out.cancelled ? `Stopped after ${rows.length} of ${files.length}` : `Done: ${rows.length} file(s)`);
     } catch (e) {
       errEl.textContent = String(e);
     } finally {
@@ -200,6 +213,10 @@ export async function categorizeDialog(ctx: AiContext) {
     }
   });
 
+  const review = reviewPreview(h("table", { class: "list ai-review" }, thead, tbody), (tr) => {
+    const path = tr.dataset.path;
+    return path ? byPath.get(path) ?? entryFor(path) : null;
+  });
   const content = h("div", {},
     h("div", { class: "form-row" },
       h("label", {}, "Categories ", wlSelect),
@@ -209,18 +226,21 @@ export async function categorizeDialog(ctx: AiContext) {
     h("div", { class: "form-row" }, h("span", {}, "Category folders go in "), destLabelEl, destBtn),
     statusEl,
     errEl,
-    h("table", { class: "list ai-review" }, thead, tbody),
+    bar,
+    review.el,
     h("p", { class: "note" }, `${files.length} file(s), ${formatSize(files.reduce((n, f) => n + f.size, 0))}. Nothing changes until you review and apply the plan. Approved decisions are remembered once applied and used as hints next time.`),
   );
   const m = modal({
     title: "Categorize",
     content,
     actions: [suggestBtn, planBtn],
-    left: h("span", {}, progress, " ", count, " ",
+    left: h("span", {}, count, " ", review.controls, " ",
       h("button", { onclick: () => { rows.forEach((r) => (r.approved = true)); tbody.querySelectorAll<HTMLInputElement>("td:first-child input").forEach((c) => (c.checked = true)); updateCount(); } }, "All"),
       h("button", { onclick: () => { rows.forEach((r) => (r.approved = false)); tbody.querySelectorAll<HTMLInputElement>("td:first-child input").forEach((c) => (c.checked = false)); updateCount(); } }, "None")),
     onClose: () => { if (running) void api.aiCancel(); },
   });
+  m.dialog.classList.add("wide");
+  review.attach(m.dialog);
 }
 
 // ---------- settings ----------

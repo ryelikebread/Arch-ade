@@ -243,3 +243,23 @@ dialog.arcade-host { width: fit-content; max-width: 96vw; min-width: min(560px, 
 .arcade-board td { padding: 0 4px 0 0; white-space: nowrap; color: #c9bfe8; }
 .arcade-board td.num { text-align: right; color: #f4ecff; }
 .arcade-board tr.mine td { color: #6bff8f; }
+
+/* Review previews (Categorize, plan review) */
+dialog.wide { max-width: min(1400px, 96vw); width: 96vw; }
+.review-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 38%); gap: 10px; min-height: 0; }
+.review-split.no-preview { grid-template-columns: minmax(0, 1fr); }
+.review-split.no-preview .review-side { display: none; }
+.review-table { min-width: 0; overflow: auto; max-height: 56vh; }
+.review-table tr.selected td { background: var(--select); }
+.review-table tbody tr, .review-table tr:has(td) { cursor: pointer; }
+.review-side { min-width: 0; max-height: 56vh; display: flex; }
+.review-side .preview { flex: 1 1 auto; overflow: auto; box-shadow: 0 0 0 var(--px) var(--grid); }
+.review-side .preview:not(.full) .preview-image img { max-height: 30vh; }
+.review-side .preview:not(.full) iframe { height: 30vh; }
+.review-controls { display: inline-flex; gap: 6px; align-items: center; }
+
+/* Categorize progress bar */
+.pbar { position: relative; height: 16px; background: var(--panel2); box-shadow: 0 0 0 var(--px) var(--grid); margin: 6px 0; }
+.pbar-fill { height: 100%; width: 0; background: repeating-linear-gradient(90deg, var(--accent) 0 6px, color-mix(in srgb, var(--accent) 75%, var(--bg)) 6px 8px); transition: width 0.2s steps(4); }
+.pbar-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 10px var(--pixel-font); color: var(--ink); text-shadow: 1px 1px 0 var(--panel); }
+.pbar.done .pbar-fill { background: var(--ok); }
