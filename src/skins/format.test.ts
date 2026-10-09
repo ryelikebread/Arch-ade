@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normalize, textWidth, _glyphsForTest } from "../pixel/font";
 import space from "./builtin/space/manifest.json";
 import volcano from "./builtin/volcano/manifest.json";
-import { animationFor, caption, ease, frameAt, poseAt, propSprite, validateSkin, type SkinManifest } from "./format";
+import { animationFor, caption, ease, encoreFor, frameAt, poseAt, propSprite, validateSkin, type SkinManifest } from "./format";
 
 describe("skin manifests", () => {
   it("built-in skins are valid and animate every action", () => {
@@ -28,6 +28,23 @@ describe("skin manifests", () => {
     expect(errs.join("\n")).toMatch(/unknown sprite nope/);
     expect(errs.join("\n")).toMatch(/in order/);
     expect(validateSkin("nope")).toEqual(["manifest is not a JSON object"]);
+  });
+
+  it("plays an encore after every Nth listed decision", () => {
+    const m = JSON.parse(JSON.stringify(volcano));
+    const bonus = { duration: 1200, tracks: [], sounds: [{ at: 0, sfx: "chime" }] };
+    m.encore = { on: ["move"], every: 3, animations: [bonus] };
+    const ok = validateSkin(m) as SkinManifest;
+    expect(Array.isArray(ok) ? ok : []).toEqual([]);
+    expect(encoreFor(ok, "move", { move: 2 }, 0)).toBeNull();
+    expect(encoreFor(ok, "move", { move: 3 }, 0.5)).toEqual(bonus);
+    expect(encoreFor(ok, "keep", { move: 3 }, 0)).toBeNull();
+    expect(encoreFor(ok, "move", { move: 6 }, 0.99)).toEqual(bonus);
+    m.encore = { on: ["nope"], every: 0, animations: [] };
+    const errs = (validateSkin(m) as string[]).join("\n");
+    expect(errs).toMatch(/encore.on/);
+    expect(errs).toMatch(/encore.every/);
+    expect(errs).toMatch(/encore.animations/);
   });
 
   it("picks a random variant for an action, each with its own sounds", () => {

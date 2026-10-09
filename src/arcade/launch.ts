@@ -49,6 +49,12 @@ export async function launchArcade(round: ArcadeRound, autostart = current.mode 
   }
 }
 
+/** The leaderboard on its own (from Settings), whatever the mode. */
+export async function showLeaderboard(): Promise<void> {
+  const { openArcade } = await import("./host");
+  openArcade({ source: "Plan", files: [] }, { game: current.game, autostart: false, leaderboard: true });
+}
+
 /** The Arcade section of Settings. */
 export function arcadeSettingsSection(): Node {
   const mode = h(
@@ -70,7 +76,7 @@ export function arcadeSettingsSection(): Node {
     "div",
     {},
     h("div", { class: "head" }, "Arcade mode"),
-    h("div", { class: "form-row" }, mode, game),
+    h("div", { class: "form-row" }, mode, game, h("button", { onclick: () => void showLeaderboard().catch((e) => console.error("arcade", e)) }, "Leaderboard…")),
     h("p", { class: "note" }, "After File by File or an applied plan, the files you processed come back as a mini-game: trashed files are the enemies, kept files are pickups and allies."),
   );
 }

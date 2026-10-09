@@ -9,6 +9,7 @@ import faq from "../help/faq.md?raw";
 import quickStart from "../help/quick-start.md?raw";
 import type { DupeGroup, FileEntry, Op, PlanOut, RenameOptions, RenameRow, RunReport } from "../types";
 import { h, modal } from "./dom";
+import { entryFor, reviewPreview } from "./review-preview";
 
 function describeOp(op: Op): [string, string] {
   switch (op.type) {
@@ -35,8 +36,31 @@ function describeOp(op: Op): [string, string] {
  * Shows a plan. With dry run on, this is all that happens. With it off, the
  * user can apply it; `onDone` receives the result.
  */
-export function planReview(out: PlanOut, onDone: (r: RunReport) => void, onToggleDryRun: () => void) {
+/** The existing file a step works on, for the preview (none for new folders and temp names). */
+export function opSource(op: Op): string | null {
+  const p = op.type === "mkdir" ? null : "from" in op ? op.from : op.path;
+  return p && !baseName(p).startsWith(".arch-ade-tmp-") ? p : null;
+}
+
+export function planReview(out: PlanOut, onDone: (r: RunReport) => void, onToggleDryRun: () => void, lookup: (path: string) => FileEntry | undefined = () => undefined) {
   const { plan } = out;
+  const preview = plan.ops.length
+    ? reviewPreview(
+        h(
+          "table",
+          { class: "list" },
+          h("tr", {}, h("th", {}, "#"), h("th", {}, "Step"), h("th", {}, "Details")),
+          ...plan.ops.map((op, i) => {
+            const [what, detail] = describeOp(op);
+            return h("tr", { "data-path": opSource(op) ?? undefined }, h("td", {}, String(i + 1)), h("td", {}, what), h("td", { style: "white-space:pre-wrap" }, detail));
+          }),
+        ),
+        (tr) => {
+          const path = tr.dataset.path;
+          return path ? lookup(path) ?? entryFor(path) : null;
+        },
+      )
+    : null;
   const blocking = plan.issues.filter((i) => i.blocking);
   const notes = plan.issues.filter((i) => !i.blocking);
   const content = h(
@@ -47,17 +71,7 @@ export function planReview(out: PlanOut, onDone: (r: RunReport) => void, onToggl
           ...blocking.map((i) => h("div", { class: "warn" }, `${i.path}: ${i.message}`)))
       : null,
     notes.length ? h("div", { class: "group" }, ...notes.map((i) => h("div", { class: "note" }, `${baseName(i.path)}: ${i.message}`))) : null,
-    plan.ops.length
-      ? h(
-          "table",
-          { class: "list" },
-          h("tr", {}, h("th", {}, "#"), h("th", {}, "Step"), h("th", {}, "Details")),
-          ...plan.ops.map((op, i) => {
-            const [what, detail] = describeOp(op);
-            return h("tr", {}, h("td", {}, String(i + 1)), h("td", {}, what), h("td", { style: "white-space:pre-wrap" }, detail));
-          }),
-        )
-      : h("p", { class: "note" }, "Nothing to do."),
+    preview ? preview.el : h("p", { class: "note" }, "Nothing to do."),
   );
   const apply = h("button", { class: "primary", disabled: out.id == null || out.dryRun }, "Apply");
   const left = out.dryRun
@@ -65,7 +79,11 @@ export function planReview(out: PlanOut, onDone: (r: RunReport) => void, onToggl
     : plan.ops.some((o) => o.type === "delete")
       ? `${plan.ops.length} step(s). A permanent delete can't be undone.`
       : `${plan.ops.length} step(s). Everything is undoable.`;
-  const m = modal({ title: plan.label, content, actions: [apply], left });
+  const m = modal({ title: plan.label, content, actions: [apply], left: preview ? h("span", {}, preview.controls, " ", left) : left });
+  if (preview) {
+    m.dialog.classList.add("wide");
+    preview.attach(m.dialog);
+  }
   apply.addEventListener("click", async () => {
     if (out.id == null) return;
     apply.disabled = true;

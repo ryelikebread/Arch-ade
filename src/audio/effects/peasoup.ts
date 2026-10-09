@@ -36,12 +36,14 @@ export const effects: Record<string, Voice[]> = {
     { wave: "triangle", start: 0, dur: 0.12, f0: 180, f1: 90, vol: 0.5, decay: 20 },
     { wave: "noise", start: 0, dur: 0.05, f0: 8000, vol: 0.15, decay: 50 },
   ],
-  /** A sticker peeled off its backing. */
-  soupTear: [{ wave: "noise", start: 0, dur: 0.22, f0: 11000, vol: 0.2, attack: 0.02, release: 0.05, lp: [2500, 6000] }],
-  /** The new label slapped on. */
-  soupSlap: [
-    { wave: "noise", start: 0, dur: 0.09, f0: 14000, vol: 0.45, decay: 35, lp: [9000, 3000] },
-    { wave: "triangle", start: 0, dur: 0.1, f0: 140, f1: 70, vol: 0.4, decay: 25 },
+  /** A quill scratching across the page: a run of tiny strokes. */
+  soupQuill: [0, 0.05, 0.09, 0.15, 0.2, 0.24, 0.3].map((start, i): Voice => ({
+    wave: "noise", start, dur: 0.035 + (i % 3) * 0.01, f0: 12000 + (i % 2) * 4000, vol: 0.13, attack: 0.008, release: 0.015, lp: [5000 + (i % 3) * 1500, 3500],
+  })),
+  /** The recipe book's cover and pages flapping. */
+  soupPage: [
+    { wave: "noise", start: 0, dur: 0.18, f0: 9000, vol: 0.22, attack: 0.04, release: 0.08, lp: [900, 3800] },
+    { wave: "noise", start: 0.12, dur: 0.1, f0: 7000, vol: 0.18, decay: 25, lp: [2500, 1200] },
   ],
   /** A kitchen-timer ding. */
   soupDing: [

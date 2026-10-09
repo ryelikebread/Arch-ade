@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-09
+
+- Categorize shows a progress bar (done / total and a percentage) while it suggests. Why: Rye asked for a progress bar for AI categorize.
+- The Categorize list and every plan review show a preview beside the list: click a row or use ↑/↓, Space or Full screen to fill the window, Esc to come back, and a Preview tick box to hide it. Why: Rye asked for preview options in the full review.
+- Settings > Arcade mode has a Leaderboard button. Why: Rye asked for leaderboard access from Settings.
+- New Bank Heist skin with Heist Radio (two original songs) and its own sound effects; each decision picks one of several outcomes at random, the van fills up as files are moved and every fifth move ends in a random getaway. The film and comic characters in the request are original stand-ins (an explorer with a decoy bag; a caped hero against a robot-armed inventor). Why: Rye asked for this skin; the substitutions keep copyrighted characters out.
+- Peasoup's rename now writes the new name into the recipe book under "NEW INGREDIENT". Why: Rye asked for it.
+- Skin manifests gain `encore` (a bonus animation after every Nth decision) and a caption `shadow` option. Why: needed for the heist getaways and the recipe book's dark ink.
+- `node_modules` is no longer tracked in git (a link to it had been committed by mistake). Why: it broke `npm install` on a fresh checkout.
+
 ## 2026-10-08
 
 - Phase 5: Undelete can be steered with the mouse (click to capture, Esc to let go). Why: Rye asked for mouse piloting, not just keys.

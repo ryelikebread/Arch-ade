@@ -52,6 +52,7 @@ The built-in skins are good examples: `src/skins/builtin/volcano/manifest.json` 
 | `sounds` | Optional sound effects per decision, see below. |
 | `animations` | One per decision: `keep`, `move`, `rename`, `trash` are required; `delete` is optional and falls back to `trash`. Duration is 100..10000 ms. |
 | `variants` | Optional extra animations per decision; each time, one of the main animation and its variants is picked at random. See [Variants](#variants). |
+| `encore` | Optional bonus animation after every few decisions, see [Encore](#encore). |
 | `music` | Optional id of a built-in song to play while this skin is on (it replaces the chosen built-in station; My Music is left alone). |
 
 ## Tracks
@@ -72,7 +73,8 @@ sprite or a caption:
   `out`, `inOut`).
 - `fps`: animate a multi-frame sprite; `once: true` plays the frames once and holds the last.
 - `text`: a caption in the built-in 3x5 pixel font (uppercase). `{name}`, `{newName}`,
-  `{dest}` and `{kind}` are filled in. `clip: [x, y, w, h]` cuts it to a box (for tickers).
+  `{dest}` and `{kind}` are filled in. `clip: [x, y, w, h]` cuts it to a box (for tickers). Captions get a black shadow; `shadow`
+  sets another color, or `false` for none (for writing on a light page).
 
 ## Sounds
 
@@ -115,6 +117,17 @@ listed decisions happens, and stays on the last one. Undo steps it back.
 ```
 
 Up to 16 sprites. Peasoup's soup pot fills up over six stages as files are kept.
+
+## Encore
+
+An encore is a bonus animation played right after every `every`-th decision of the listed
+kinds (one of `animations`, picked at random). Up to 8 animations; each may carry `sounds`.
+
+```json
+"encore": { "on": ["move"], "every": 5, "animations": [{ "duration": 2400, "tracks": [], "sounds": [] }] }
+```
+
+Bank Heist uses this: after every fifth move the crew makes its getaway.
 
 ## Undo
 

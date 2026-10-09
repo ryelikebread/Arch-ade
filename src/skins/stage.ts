@@ -8,7 +8,7 @@ import { onWindowHidden } from "../lib/hidden";
 import { drawText, textWidth } from "../pixel/font";
 import { kindIcon } from "../pixel/sprites";
 import type { Kind } from "../types";
-import { animationFor, caption, propSprite, frameAt, poseAt, type Animation, type Captions, type SkinEvent, type SkinManifest, type Track } from "./format";
+import { animationFor, caption, encoreFor, propSprite, frameAt, poseAt, type Animation, type Captions, type SkinEvent, type SkinManifest, type Track } from "./format";
 
 export const MAX_FPS = 30;
 const FILE_PX = 16;
@@ -34,6 +34,8 @@ interface Playing {
   captions: Captions;
   /** Played backwards (an undo). */
   reverse?: boolean;
+  /** A skin encore to play once this one ends. */
+  next?: Animation;
 }
 
 /** How long a rewind takes: quicker than the original. */
@@ -82,9 +84,10 @@ export class Stage {
     if (!found) return;
     sound.cue(found.cues, found.anim.duration);
     this.icon(kind);
-    this.playing = { anim: found.anim, started: performance.now(), kind, captions };
-    this.history.push(this.playing);
     this.counts[event] = (this.counts[event] ?? 0) + 1;
+    const next = encoreFor(this.skin.manifest, event, this.counts, Math.random()) ?? undefined;
+    this.playing = { anim: found.anim, started: performance.now(), kind, captions, next };
+    this.history.push(this.playing);
     if (this.history.length > 50) this.history.shift();
     this.wake();
   }
@@ -100,7 +103,7 @@ export class Stage {
     const anim = { ...last.anim, duration: last.anim.duration / REWIND_SPEED };
     sound.cue([{ sfx: "rewind", at: 0 }], anim.duration);
     this.icon(kind);
-    this.playing = { ...last, anim, kind, started: performance.now(), reverse: true };
+    this.playing = { ...last, anim, kind, started: performance.now(), reverse: true, next: undefined };
     this.wake();
   }
 
@@ -143,7 +146,11 @@ export class Stage {
     this.stop();
     if (this.hidden) return;
     const now = performance.now();
-    if (this.playing && now - this.playing.started >= this.playing.anim.duration) this.playing = null;
+    if (this.playing && now - this.playing.started >= this.playing.anim.duration) {
+      const { next, kind, captions } = this.playing;
+      this.playing = next ? { anim: next, started: now, kind, captions } : null;
+      if (next) sound.cue(next.sounds ?? [], next.duration);
+    }
     this.draw(now);
     const fps = this.playing ? MAX_FPS : this.idleFps;
     if (!fps) return;
@@ -210,7 +217,7 @@ export class Stage {
         ctx.clip();
       }
       ctx.globalAlpha = pose.alpha;
-      drawText(ctx, text, Math.round(x + 1), Math.round(pose.y + 1), "#000000");
+      if (t.shadow !== false) drawText(ctx, text, Math.round(x + 1), Math.round(pose.y + 1), t.shadow ?? "#000000");
       drawText(ctx, text, Math.round(x), Math.round(pose.y), t.color ?? "#ffffff");
       ctx.restore();
       return;

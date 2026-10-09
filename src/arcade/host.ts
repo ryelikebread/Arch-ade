@@ -24,13 +24,15 @@ export interface ArcadeOptions {
   game: string;
   /** Start that game right away instead of showing the picker. */
   autostart: boolean;
+  /** Only show the leaderboard (from Settings); Back closes. */
+  leaderboard?: boolean;
 }
 
 export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
   const theCast = castRound(round);
   let attempt = 0;
   let scores: ScoreEntry[] = [];
-  api.getSettings().then((s) => (scores = normalizeScores(s.arcadeScores, s.arcadeBest)), () => {});
+  const loaded = api.getSettings().then((s) => void (scores = normalizeScores(s.arcadeScores, s.arcadeBest)), () => {});
 
   const screen = h("div", { class: "arcade-screen" });
   const dialog = h("dialog", { class: "arcade arcade-host", "aria-label": "Arcade" }, h("div", { class: "arcade-frame" }, screen));
@@ -420,6 +422,10 @@ export function openArcade(round: ArcadeRound, opts: ArcadeOptions) {
   }
 
   const chosen = GAMES.find((g) => g.id === opts.game);
-  if (opts.autostart) play(chosen ?? randomGame());
+  if (opts.leaderboard) {
+    screen.replaceChildren(h("h2", {}, "Leaderboard"), h("p", { class: "arcade-sub" }, "Loading…"));
+    keyHandler = (ev) => ev.key === "Escape" && close();
+    void loaded.then(() => dialog.open && leaderboard(undefined, close));
+  } else if (opts.autostart) play(chosen ?? randomGame());
   else picker(chosen ? GAMES.indexOf(chosen) : GAMES.length);
 }

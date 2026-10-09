@@ -218,7 +218,7 @@ export class PreviewPane {
   private detailTable(e: FileEntry, p: Preview | null): HTMLElement {
     const rows: [string, string][] = [
       ["Path", e.path],
-      ["Size", e.isDir ? "" : `${formatSize(e.size)} (${e.size.toLocaleString()} bytes)`],
+      ["Size", e.isDir || e.size < 0 ? "" : `${formatSize(e.size)} (${e.size.toLocaleString()} bytes)`],
       ["Kind", p ? `${p.kindLabel} · ${p.mime}` : e.kindLabel],
       ["Created", formatDate(e.created)],
       ["Modified", formatDate(e.modified)],
