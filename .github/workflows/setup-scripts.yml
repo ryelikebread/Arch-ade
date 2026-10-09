@@ -1,0 +1,55 @@
+name: Setup scripts
+
+# Runs the one-paste setup scripts (SETUP.md) on each OS against this checkout,
+# without starting the app, then builds the app with what they installed.
+
+on:
+  pull_request:
+    paths:
+      - "scripts/setup.sh"
+      - "scripts/setup-windows.ps1"
+      - ".github/workflows/setup-scripts.yml"
+  workflow_dispatch:
+
+jobs:
+  setup:
+    name: Setup (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      ARCHADE_DIR: ${{ github.workspace }}
+      ARCHADE_NO_RUN: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run setup.sh (twice, to check re-runs)
+        if: runner.os != 'Windows'
+        run: |
+          bash scripts/setup.sh
+          bash scripts/setup.sh
+
+      - name: Run setup-windows.ps1 (twice, to check re-runs)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build the app with the installed tools
+        if: runner.os != 'Windows'
+        run: |
+          [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+          cargo build -p arch-ade
+
+      - name: Build the app with the installed tools (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:VCPKG_ROOT = [Environment]::GetEnvironmentVariable('VCPKG_ROOT', 'User')
+          cargo build -p arch-ade
+          if ($LASTEXITCODE -ne 0) { exit 1 }

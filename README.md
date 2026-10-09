@@ -39,7 +39,10 @@ display skins). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 
 ## Setup
 
-Prerequisites:
+**Easiest:** [SETUP.md](SETUP.md) has a one-paste setup for Mac, Windows and Linux that
+installs everything below, gets the code and starts the app.
+
+Prerequisites, if you'd rather install by hand:
 
 - Rust (stable) and Node 22+
 - macOS: Xcode Command Line Tools
