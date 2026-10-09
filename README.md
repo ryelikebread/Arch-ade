@@ -120,7 +120,11 @@ so nothing loops.
 selected files (or all visible files). Nothing changes until you review the suggestions,
 edit or untick any of them, and click **Review plan**: that builds a normal plan (folders to
 create, files to move or rename) that goes through dry run and the journal like everything
-else, so it is undoable.
+else, so it is undoable. A progress bar shows how far the suggestions have got.
+
+In the Categorize list and in every plan review, click a row (or use ↑/↓) to preview its
+file beside the list; **Space** or **Full screen** fills the window and **Esc** comes back.
+Untick **Preview** to hide it.
 
 Where a suggestion comes from, in order:
 
@@ -196,8 +200,14 @@ innocent, move is guilty, rename is a mistrial, trash is contempt and the bailif
 it away). *Peasoup* cooks: keep goes into the soup, which thickens as you go; move goes to
 the pantry, rename gets a new label, and trash feeds the dog. *Royal Court* brings each file
 before the king: keep wins his favor, move is exile through the castle gate, rename is a
-decree from the town crier, and trash is either a walk to the dungeon or the trap door. These
-three each have their own theme music and sound effects.
+decree from the town crier, and trash is either a walk to the dungeon or the trap door.
+*Peasoup*'s rename writes the new name into the recipe book as a new ingredient. *Bank Heist*
+turns each file into the loot, with the crew shown in comic panels underneath: move is a
+successful job (the van fills up and every fifth move ends in a getaway by van, sewer or a
+cool walk from an explosion), rename is a decoy swap or a double-cross, trash is a dye pack,
+crossfire, a superhero brawl or a car crash, and keep is the SWAT team, a hero cop or the
+vault door shutting with the thief inside. Each time, the outcome is picked at random. These
+four each have their own theme music and sound effects.
 Skins are a sprite sheet plus a JSON manifest, so you can make your own: put them in
 `<app data>/skins/<name>/` (see [docs/SKINS.md](docs/SKINS.md)). The built-in sheets are
 original art drawn in code: `npm run build-skins` regenerates them from `scripts/skins/`.
@@ -272,8 +282,8 @@ formation). Pickups beyond the files' perks:
   pods on top of any gun.
 
 WASD works for arrows, Z/J for Space and K/Shift for X. **Esc** (or P) pauses, with
-Resume, Restart, Other game and Close arcade. The **Leaderboard** (in the game picker
-and on the score screen) keeps the top 10 scores per game on this machine, with the date
+Resume, Restart, Other game and Close arcade. The **Leaderboard** (in the game picker,
+on the score screen and in **Settings > Arcade mode**) keeps the top 10 scores per game on this machine, with the date
 and folder.
 All art and sound is original, drawn and generated in code; the games are "inspired by"
 only. Each game is its own module, loaded the first time it's played; they run at 30
