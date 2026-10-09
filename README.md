@@ -1,4 +1,4 @@
-# Arch-ade
+# Retro Arch-ade
 
 A local-only desktop app for browsing, previewing and organizing the files in a folder,
 with an 8-bit pixel look. macOS, Windows and Linux from one codebase (Tauri 2 + Rust +
