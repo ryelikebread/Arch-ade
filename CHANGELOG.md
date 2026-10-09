@@ -2,6 +2,7 @@
 
 ## 2026-10-09
 
+- One-paste setup: `scripts/setup.sh` (Mac and Linux) and `scripts/setup-windows.ps1` install the prerequisites, clone the repo to ~/Retro-Arch-ade, run npm install and start the app; safe to re-run. SETUP.md has the one line per OS, and a new CI workflow runs both scripts on all three OSes. Why: Rye asked for a copy-and-paste setup per OS.
 - Categorize shows a progress bar (done / total and a percentage) while it suggests. Why: Rye asked for a progress bar for AI categorize.
 - The Categorize list and every plan review show a preview beside the list: click a row or use ↑/↓, Space or Full screen to fill the window, Esc to come back, and a Preview tick box to hide it. Why: Rye asked for preview options in the full review.
 - Settings > Arcade mode has a Leaderboard button. Why: Rye asked for leaderboard access from Settings.
