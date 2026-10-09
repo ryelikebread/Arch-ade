@@ -32,6 +32,22 @@ describe("peasoup skin", () => {
       }
   });
 
+  it("writes the new name into the recipe book letter by letter", () => {
+    const m = peasoup as unknown as SkinManifest;
+    const rename = m.animations.rename!;
+    const texts = rename.tracks.filter((t) => t.text !== undefined);
+    expect(texts.some((t) => t.text === "NEW INGREDIENT:")).toBe(true);
+    const name = texts.filter((t) => t.text === "{newName}");
+    expect(name.length).toBeGreaterThanOrEqual(16);
+    // Each letter's copy is clipped wider than the one before, and dark ink has no shadow.
+    const widths = name.slice(0, 16).map((t) => t.clip![2]);
+    expect(widths).toEqual([...widths].sort((a, b) => a - b));
+    for (const t of texts) expect(t.shadow).toBe(false);
+    expect(rename.tracks.some((t) => t.sprite === "quill")).toBe(true);
+    expect(rename.duration).toBeGreaterThanOrEqual(1500);
+    expect(rename.duration).toBeLessThanOrEqual(2600);
+  });
+
   it("only uses sound effects that exist", () => {
     const m = peasoup as unknown as SkinManifest;
     const anims = [...Object.values(m.animations), ...Object.values(m.variants ?? {}).flat()];

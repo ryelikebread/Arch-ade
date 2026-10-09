@@ -1,6 +1,7 @@
 // Peasoup skin: a cozy kitchen. The file is an ingredient on the cutting
 // board. keep = into the pot of pea soup (which changes as it goes in);
-// move = onto a pantry shelf; rename = a new label is slapped on; trash = fed
+// move = onto a pantry shelf; rename = the recipe book opens and a quill writes in
+// the new ingredient; trash = fed
 // to the dog; delete = the dog buries it out in the yard.
 // All art is original, drawn here.
 import { art, blank, burst, disc, set } from "./lib.mjs";
@@ -480,21 +481,114 @@ const bowlFood = ["..TNTNT..", "kRRRRRRRk", ".kRRRRRk.", "..kkkkk.."];
 // Paints over the lying dog with the wall color, so another dog can take its place.
 const dogPatch = fill(blank(25, 11), 0, 0, 25, 11, WAINSCOT);
 
-// ---------- labels and effects ----------
+// ---------- the recipe book and effects ----------
 
-function label() {
-  const W = 64, H = 11, f = box(blank(W, H), 0, 0, W, H, P.s, P.R);
-  fill(f, 1, 1, W - 2, 1, P.w);
-  // Little notches at the ends like a torn sticker.
-  for (const y of [3, 7]) {
-    set(f, 0, y, null);
-    set(f, W - 1, y, null);
+// The recipe book, for renames: it opens, and a quill writes the new name in.
+const BOOK_W = 152, BOOK_H = 58, PAGE_BOTTOM = 50;
+const RULE = "#c9dbe3", OLDINK = "#b9a684";
+
+const stamp = (f, rows, ox, oy) => rows.forEach((r, y) => [...r].forEach((c, x) => set(f, ox + x, oy + y, P[c])));
+
+function bookCover(f, x0, w) {
+  box(f, x0, 0, w, 55, P.R, "#5a1510");
+  for (const [cx, cy] of [[x0 + 1, 1], [x0 + w - 4, 1], [x0 + 1, 51], [x0 + w - 4, 51]]) fill(f, cx, cy, 3, 3, P.y);
+}
+
+function pageBlock(f, x0, w, spineSide) {
+  fill(f, x0, 2, w, PAGE_BOTTOM - 1, P.W);
+  // Shade toward the spine, and the stack of pages along the bottom.
+  const sx = spineSide === "right" ? x0 + w - 3 : x0;
+  fill(f, sx, 2, 3, PAGE_BOTTOM - 1, P.c);
+  fill(f, x0, PAGE_BOTTOM + 1, w, 1, P.l);
+  fill(f, x0, PAGE_BOTTOM + 2, w, 1, P.C);
+}
+
+// Ruled lines and a pink margin on the right page, ready for writing.
+function ruled(f) {
+  for (const y of [15, 27, 36, 45]) fill(f, 80, y, 67, 1, RULE);
+  fill(f, 81, 3, 1, PAGE_BOTTOM - 2, P.p);
+}
+
+function bookOpen() {
+  const f = blank(BOOK_W, BOOK_H);
+  bookCover(f, 0, BOOK_W);
+  pageBlock(f, 3, 72, "right");
+  pageBlock(f, 77, 72, "left");
+  fill(f, 75, 1, 2, 53, "#5a1510");
+  // Right page: ruled lines and a pink margin, ready for writing.
+  ruled(f);
+  // Left page: a dashed frame for the ingredient's picture...
+  for (let i = 0; i < 22; i++) {
+    if (i % 3 === 2) continue;
+    set(f, 26 + i, 11, P.C); set(f, 26 + i, 32, P.C);
+    set(f, 26, 11 + i, P.C); set(f, 47, 11 + i, P.C);
   }
+  // ...little doodles of a pea pod and a carrot, and an older recipe's scribbles.
+  stamp(f, [".GGGGGG.", "GhGhGhGG", ".GGGGGG."], 8, 5);
+  stamp(f, ["..E.E", "...E.", "oooo.", ".ooo.", "..o.."], 58, 4);
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  for (const y of [38, 43]) {
+    let x = 9;
+    while (x < 66) {
+      const word = 3 + Math.floor(rnd() * 8);
+      for (let i = 0; i < word && x + i < 66; i++) set(f, x + i, y + (i % 3 === 1 ? -1 : 0), OLDINK);
+      x += word + 3;
+    }
+  }
+  // A ribbon bookmark hanging out the bottom.
+  fill(f, 110, 50, 3, 6, P.r);
+  set(f, 110, 56, P.r); set(f, 112, 56, P.r); set(f, 111, 55, P.R);
   return f;
 }
 
-const slap1 = ["w.......w", ".w.....w.", "........."];
-const slap2 = ["w..w.w..w", ".w.....w.", "w.......w"];
+function bookClosed() {
+  const W = 76, f = blank(W, BOOK_H);
+  bookCover(f, 0, W);
+  fill(f, 0, 0, 4, 55, "#5a1510");
+  for (let y = 4; y < 51; y += 3) set(f, W - 1, y, P.W);
+  // A golden pea pod on the cover.
+  const pod = [".yyyyyyyyyy.", "yyRyyRyyRyyy", "yRRyRRyRRyyy", "yyRyyRyyRyyy", ".yyyyyyyyyy."];
+  pod.forEach((r, y) => [...r].forEach((c, x) => c !== "." && set(f, 32 + x, 22 + y, c === "y" ? P.y : P.R)));
+  fill(f, 26, 18, 24, 1, P.y);
+  fill(f, 26, 31, 24, 1, P.y);
+  return f;
+}
+
+// Halfway open: the right page lies flat and the cover stands up over the left.
+function bookHalf() {
+  const f = blank(BOOK_W, BOOK_H);
+  bookCover(f, 76, 76);
+  pageBlock(f, 77, 72, "left");
+  ruled(f);
+  fill(f, 75, 1, 2, 53, "#5a1510");
+  box(f, 44, 0, 32, 55, "#a3271c", "#5a1510");
+  fill(f, 44, 0, 3, 55, P.y);
+  return f;
+}
+
+// A goose-feather quill; its nib is the bottom-left pixel (0, 17).
+function quill() {
+  const W = 15, H = 18, f = blank(W, H);
+  const ax = 0.5, ay = 17.5, bx = 14.5, by = 0.5, len = Math.hypot(bx - ax, by - ay);
+  const ux = (bx - ax) / len, uy = (by - ay) / len;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const dx = x + 0.5 - ax, dy = y + 0.5 - ay, u = (dx * ux + dy * uy) / len, d = dx * -uy + dy * ux;
+      if (u < 0 || u > 1) continue;
+      if (u > 0.3) {
+        const w = 3.3 * Math.sin((Math.PI * (u - 0.3)) / 0.72) ** 0.7;
+        if (Math.abs(d) < 0.6) set(f, x, y, P.x);
+        else if (Math.abs(d) < w) set(f, x, y, Math.abs(d) > w - 1 ? P.X : P.w);
+      } else if (Math.abs(d) < 0.7) set(f, x, y, u < 0.12 ? P.k : P.T);
+    }
+  set(f, 0, 17, P.k);
+  return f;
+}
+
+const flourish = ["..RR....", ".R..R..R", "R....RR."];
+const twinkle = ["..y..", "..y..", "yy.yy", "..y..", "..y.."];
+const twinkle2 = [".....", "..y..", ".y.y.", "..y..", "....."];
 
 const heart = [".r.r.", "rrrrr", "rrrrr", ".rrr.", "..r.."];
 const crumb1 = ["T..", "..N", ".T."];
@@ -538,8 +632,12 @@ export const sprites = {
   flower: art(flower, P),
   bowl: art(bowl, P),
   bowlFood: art(bowlFood, P),
-  label: label(),
-  slap: [art(slap1, P), art(slap2, P)],
+  bookOpen: bookOpen(),
+  bookHalf: bookHalf(),
+  bookClosed: bookClosed(),
+  quill: quill(),
+  flourish: art(flourish, P),
+  twinkle: [art(twinkle, P), art(twinkle2, P)],
   heart: art(heart, P),
   crumb: [art(crumb1, P), art(crumb2, P)],
   note: art(note1, P),
@@ -656,6 +754,68 @@ function buried() {
   };
 }
 
+// rename: the recipe book opens, the file hops onto the picture frame and a
+// quill writes "NEW INGREDIENT:" and then the new name, letter by letter (each
+// letter is a copy of the text clipped one glyph wider than the last).
+const BOOK = [4, 6];
+const BOOK_SHUT = [BOOK[0] + 76, BOOK[1]];
+const PIC = [BOOK[0] + 29, BOOK[1] + 14];
+const TEXT_X = BOOK[0] + 82;
+const LINE = { head: BOOK[1] + 8, name1: BOOK[1] + 20, name2: BOOK[1] + 29, under: BOOK[1] + 38 };
+const PER_LINE = 16; // glyphs per line: 16 x 4px fills the ruled page
+const WRITE_END = 0.86; // the book starts to close
+
+// One track per letter; returns them plus the pen's keys along the way.
+function writeLine(text, y, color, t0, t1, count, skip = 0) {
+  const dt = (t1 - t0) / count, tracks = [], pen = [];
+  for (let i = 0; i < count; i++) {
+    const a = t0 + i * dt, b = i === count - 1 ? WRITE_END : t0 + (i + 1) * dt;
+    tracks.push({ text, color, shadow: false, clip: [TEXT_X, y - 1, 4 * (i + 1), 8], keys: hold(a, b, TEXT_X - skip * 4, y) });
+    pen.push({ t: a + dt * 0.5, x: TEXT_X + 4 * i + 2, y: y + (i % 2 ? 1 : 4) - 17 });
+  }
+  pen.push({ t: t1, x: TEXT_X + 4 * count, y: y + 4 - 17 });
+  return { tracks, pen };
+}
+
+function intoTheRecipeBook() {
+  const head = writeLine("NEW INGREDIENT:", LINE.head, "#2a1a14", 0.13, 0.35, 15);
+  const name1 = writeLine("{newName}", LINE.name1, "#8e2219", 0.39, 0.6, PER_LINE);
+  const name2 = writeLine("{newName}", LINE.name2, "#8e2219", 0.62, 0.68, PER_LINE, PER_LINE);
+  const under = (i) => ({ sprite: "flourish", keys: hold(0.7 + i * 0.008, WRITE_END, TEXT_X + i * 8, LINE.under) });
+  const tip = (t, x, y, extra = {}) => ({ t, x, y: y - 17, ...extra });
+  return {
+    duration: 2600,
+    tracks: [
+      { sprite: "bookClosed", keys: [
+        { t: 0, x: BOOK_SHUT[0], y: 70, alpha: 0 }, { t: 0.05, x: BOOK_SHUT[0], y: BOOK_SHUT[1], ease: "out" }, { t: 0.065, x: BOOK_SHUT[0], y: BOOK_SHUT[1] },
+      ] },
+      { sprite: "bookClosed", keys: [
+        { t: 0.9, x: BOOK_SHUT[0], y: BOOK_SHUT[1] }, { t: 0.92, x: BOOK_SHUT[0], y: BOOK_SHUT[1] }, { t: 1, x: BOOK_SHUT[0], y: 70, alpha: 0, ease: "in" },
+      ] },
+      { sprite: "bookHalf", keys: hold(0.065, 0.09, BOOK[0], BOOK[1]) },
+      { sprite: "bookOpen", keys: hold(0.09, WRITE_END, BOOK[0], BOOK[1]) },
+      { sprite: "bookHalf", keys: hold(WRITE_END, 0.9, BOOK[0], BOOK[1]) },
+      ...head.tracks, ...name1.tracks, ...name2.tracks,
+      ...[0, 1, 2, 3, 4, 5, 6, 7].map(under),
+      { sprite: "file", keys: [
+        { t: 0, x: FILE[0], y: FILE[1] }, { t: 0.085, x: FILE[0], y: FILE[1] },
+        { t: 0.14, x: PIC[0], y: PIC[1], arc: 16, ease: "out" }, { t: 0.77, x: PIC[0], y: PIC[1] },
+        { t: 0.79, x: PIC[0], y: PIC[1] + 1 },
+        { t: 0.86, x: FILE[0], y: FILE[1], arc: 14, ease: "in" }, { t: 1, x: FILE[0], y: FILE[1] },
+      ] },
+      { sprite: "twinkle", fps: 6, keys: hold(0.74, 0.82, PIC[0] - 6, PIC[1] - 4) },
+      { sprite: "twinkle", fps: 6, keys: hold(0.76, 0.83, PIC[0] + 15, PIC[1] + 12) },
+      { sprite: "quill", keys: [
+        tip(0.08, 170, 2, { alpha: 0 }), tip(0.12, TEXT_X, LINE.head + 4, { ease: "out" }),
+        ...head.pen, tip(0.38, TEXT_X, LINE.name1 + 4, { arc: 4 }),
+        ...name1.pen, tip(0.615, TEXT_X, LINE.name2 + 4, { arc: 3 }),
+        ...name2.pen, tip(0.7, TEXT_X, LINE.under + 3),
+        tip(0.764, TEXT_X + 64, LINE.under + 2), tip(0.84, 170, 0, { alpha: 0, ease: "in" }),
+      ] },
+    ],
+  };
+}
+
 export const manifest = {
   format: 1,
   id: "peasoup",
@@ -683,7 +843,11 @@ export const manifest = {
   sounds: {
     keep: [{ sfx: "soupHop", at: 0.1 }, { sfx: "soupPlop", at: 0.46 }, { sfx: "soupBubble", at: 0.56 }, { sfx: "soupStir", at: 0.66 }],
     move: [{ sfx: "soupCreak", at: 0.05 }, { sfx: "soupHop", at: 0.2 }, { sfx: "soupClink", at: 0.5 }, { sfx: "soupLatch", at: 0.86 }],
-    rename: [{ sfx: "soupTear", at: 0.05 }, { sfx: "soupSlap", at: 0.24 }, { sfx: "soupDing", at: 0.4 }],
+    rename: [
+      { sfx: "soupPage", at: 0.05 }, { sfx: "soupHop", at: 0.09 },
+      { sfx: "soupQuill", at: 0.14 }, { sfx: "soupQuill", at: 0.26 }, { sfx: "soupQuill", at: 0.4 }, { sfx: "soupQuill", at: 0.52 },
+      { sfx: "soupQuill", at: 0.64 }, { sfx: "soupDing", at: 0.76 }, { sfx: "soupHop", at: 0.78 }, { sfx: "soupPage", at: 0.86 },
+    ],
     trash: [{ sfx: "soupBark", at: 0.06 }, { sfx: "whoosh", at: 0.12 }, { sfx: "soupGulp", at: 0.44 }, { sfx: "soupYip", at: 0.68 }],
     delete: [{ sfx: "soupBark", at: 0.04 }, { sfx: "soupGulp", at: 0.26 }, { sfx: "soupPatter", at: 0.3 }, { sfx: "soupDig", at: 0.58 }, { sfx: "soupThud", at: 0.8 }],
   },
@@ -702,26 +866,7 @@ export const manifest = {
         cap("TO THE PANTRY: {dest}", 0.35),
       ],
     },
-    rename: {
-      duration: 2000,
-      tracks: [
-        { sprite: "file", keys: [
-          { t: 0, x: FILE[0], y: FILE[1] }, { t: 0.2, x: FILE[0], y: FILE[1] },
-          { t: 0.23, x: FILE[0], y: FILE[1] + 2 }, { t: 0.28, x: FILE[0], y: FILE[1] },
-          { t: 0.9, x: FILE[0], y: FILE[1] }, { t: 1, x: FILE[0], y: FILE[1] },
-        ] },
-        { sprite: "label", keys: [
-          { t: 0, x: 38, y: 20, alpha: 0 }, { t: 0.08, x: 38, y: 20 },
-          { t: 0.22, x: FILE[0] - 24, y: FILE[1] + 5, ease: "in" }, { t: 0.25, x: FILE[0] - 24, y: FILE[1] + 6 },
-          { t: 0.29, x: FILE[0] - 24, y: FILE[1] + 5 }, { t: 1, x: FILE[0] - 24, y: FILE[1] + 5 },
-        ] },
-        { text: "{newName}", color: "#8e2219", align: "center", clip: [FILE[0] - 22, FILE[1] + 6, 60, 9], keys: [
-          { t: 0.24, x: FILE[0] + 8, y: FILE[1] + 8, alpha: 0 }, { t: 0.3, x: FILE[0] + 8, y: FILE[1] + 8 }, { t: 1, x: FILE[0] + 8, y: FILE[1] + 8 },
-        ] },
-        { sprite: "slap", fps: 10, once: true, keys: hold(0.22, 0.36, FILE[0] + 4, FILE[1] - 1) },
-        cap("NEW LABEL", 0.3),
-      ],
-    },
+    rename: intoTheRecipeBook(),
     trash: fedToTheDog(),
     delete: buried(),
   },
