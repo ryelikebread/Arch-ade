@@ -263,3 +263,4 @@ dialog.wide { max-width: min(1400px, 96vw); width: 96vw; }
 .pbar-fill { height: 100%; width: 0; background: repeating-linear-gradient(90deg, var(--accent) 0 6px, color-mix(in srgb, var(--accent) 75%, var(--bg)) 6px 8px); transition: width 0.2s steps(4); }
 .pbar-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 10px var(--pixel-font); color: var(--ink); text-shadow: 1px 1px 0 var(--panel); }
 .pbar.done .pbar-fill { background: var(--ok); }
+.pbar.done .pbar-label { color: var(--bg); text-shadow: none; }

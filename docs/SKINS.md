@@ -73,7 +73,8 @@ sprite or a caption:
   `out`, `inOut`).
 - `fps`: animate a multi-frame sprite; `once: true` plays the frames once and holds the last.
 - `text`: a caption in the built-in 3x5 pixel font (uppercase). `{name}`, `{newName}`,
-  `{dest}` and `{kind}` are filled in. `clip: [x, y, w, h]` cuts it to a box (for tickers).
+  `{dest}` and `{kind}` are filled in. `clip: [x, y, w, h]` cuts it to a box (for tickers). Captions get a black shadow; `shadow`
+  sets another color, or `false` for none (for writing on a light page).
 
 ## Sounds
 

@@ -217,7 +217,7 @@ export class Stage {
         ctx.clip();
       }
       ctx.globalAlpha = pose.alpha;
-      drawText(ctx, text, Math.round(x + 1), Math.round(pose.y + 1), "#000000");
+      if (t.shadow !== false) drawText(ctx, text, Math.round(x + 1), Math.round(pose.y + 1), t.shadow ?? "#000000");
       drawText(ctx, text, Math.round(x), Math.round(pose.y), t.color ?? "#ffffff");
       ctx.restore();
       return;

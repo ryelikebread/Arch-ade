@@ -42,6 +42,8 @@ export interface Track {
   sprite?: string;
   text?: string;
   color?: string;
+  /** Text shadow color, or false for none (default black). */
+  shadow?: string | false;
   align?: "left" | "center";
   /** Text is cut to this box: [x, y, w, h]. */
   clip?: [number, number, number, number];
@@ -187,6 +189,7 @@ export function validateSkin(raw: unknown): SkinManifest | string[] {
       else if (t.sprite !== undefined && !known(t.sprite)) errs.push(`${where}: unknown sprite ${t.sprite}`);
       if (t?.text !== undefined && (t.text.length > 80 || (t.color !== undefined && !COLOR.test(t.color)))) errs.push(`${where}: text too long or bad color`);
       if (t?.fps !== undefined && !num(t.fps, 0, 30)) errs.push(`${where}: fps must be 0..30`);
+      if (t?.shadow !== undefined && t.shadow !== false && !(typeof t.shadow === "string" && COLOR.test(t.shadow))) errs.push(`${where}: shadow must be a color or false`);
       if (t?.once !== undefined && typeof t.once !== "boolean") errs.push(`${where}: once must be true or false`);
       if (t?.clip !== undefined && !(Array.isArray(t.clip) && t.clip.length === 4 && t.clip.every((v) => num(v, -W, 2 * W)))) errs.push(`${where}: clip must be [x, y, w, h]`);
       const keys = t?.keys;
