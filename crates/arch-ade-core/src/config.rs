@@ -2,9 +2,9 @@
 //! Renaming the app means changing [`APP_NAME`] (and the bundle identifier in
 //! `src-tauri/tauri.conf.json`).
 
-pub const APP_NAME: &str = "Arch-ade";
+pub const APP_NAME: &str = "Retro Arch-ade";
 /// Used for the app-data directory and the SQLite file name.
-pub const APP_SLUG: &str = "arch-ade";
+pub const APP_SLUG: &str = "retro arch-ade";
 
 /// Largest text file we read fully for preview; larger files are truncated.
 pub const TEXT_PREVIEW_BYTES: usize = 256 * 1024;
