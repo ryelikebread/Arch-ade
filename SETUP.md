@@ -1,7 +1,7 @@
 # Setup in one paste
 
-One script per OS installs everything Retro Arch-ade needs, puts the code in a
-`Retro-Arch-ade` folder in your home folder, and starts the app. It skips
+One script per OS installs everything Arch-ade needs, puts the code in a
+`Arch-ade` folder in your home folder, and starts the app. It skips
 anything already installed, so it's safe to run again: running it again is also
 how you update to the latest code and start the app.
 
