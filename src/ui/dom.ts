@@ -27,12 +27,25 @@ export function modal(opts: {
   left?: Node | string;
   small?: boolean;
   onClose?: () => void;
-}): { dialog: HTMLDialogElement; close: () => void } {
+}): { dialog: HTMLDialogElement; close: () => void; hide: () => void; show: () => void } {
   const dialog = h("dialog", { class: opts.small ? "small" : "" });
+  let hiding = false;
   const close = () => {
     dialog.close();
   };
+  /** Takes the dialog off screen but keeps it (and anything it is running) alive. */
+  const hide = () => {
+    hiding = true;
+    dialog.close();
+  };
+  const show = () => {
+    if (!dialog.open) dialog.showModal();
+  };
   dialog.addEventListener("close", () => {
+    if (hiding) {
+      hiding = false;
+      return;
+    }
     dialog.remove();
     opts.onClose?.();
   });
@@ -53,5 +66,5 @@ export function modal(opts: {
   );
   document.body.append(dialog);
   dialog.showModal();
-  return { dialog, close };
+  return { dialog, close, hide, show };
 }

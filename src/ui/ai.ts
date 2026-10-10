@@ -29,6 +29,29 @@ interface Row {
 /** Suggestion rows drawn at a time; more are drawn as the list scrolls. */
 const ROW_PAGE = 200;
 
+/** What the main window shows while Categorize is minimized; null when it isn't. */
+export interface CategorizeBackground {
+  running: boolean;
+  label: string;
+}
+
+// The one Categorize window, kept alive while it is minimized so a long run
+// carries on while the rest of the app is used.
+let session: { reopen: () => void } | null = null;
+let onBackground: (bg: CategorizeBackground | null) => void = () => {};
+
+/** Called whenever the minimized Categorize changes (progress, finished, reopened or closed). */
+export function watchCategorize(fn: (bg: CategorizeBackground | null) => void) {
+  onBackground = fn;
+}
+
+/** Brings a minimized Categorize back. False when there is none. */
+export function reopenCategorize(): boolean {
+  if (!session) return false;
+  session.reopen();
+  return true;
+}
+
 const MODE_LABELS: Record<string, string> = { consistent: "More consistent", refined: "More refined" };
 
 function aiStatus(settings: AiSettings): string {
@@ -37,6 +60,7 @@ function aiStatus(settings: AiSettings): string {
 }
 
 export async function categorizeDialog(ctx: AiContext) {
+  if (reopenCategorize()) return;
   const files = ctx.entries.filter((e) => !e.isDir);
   if (!files.length) return ctx.say("Select some files first (folders are skipped).", true);
   let st = await api.aiState();
@@ -44,6 +68,8 @@ export async function categorizeDialog(ctx: AiContext) {
   let dest: string | null = null;
   let rows: Row[] = [];
   let running = false;
+  let minimized = false;
+  let progress = "";
 
   const wlOf = () => st.whitelists.find((w) => w.id === settings.whitelistId) ?? st.whitelists[0];
 
@@ -75,7 +101,10 @@ export async function categorizeDialog(ctx: AiContext) {
     bar.setAttribute("aria-valuenow", String(done));
     barFill.style.width = `${pct}%`;
     barLabel.textContent = label ?? `${done} / ${total} · ${pct}%`;
+    progress = label ?? `${done} / ${total} · ${pct}%`;
+    if (minimized) report();
   };
+  const report = () => onBackground(minimized ? { running, label: progress } : null);
   const byPath = new Map(files.map((f) => [f.path, f]));
   const errEl = h("div", { class: "warn" });
   const tbody = h("tbody");
@@ -216,6 +245,10 @@ export async function categorizeDialog(ctx: AiContext) {
       running = false;
       suggestBtn.textContent = "Suggest again";
       updateCount();
+      if (minimized) {
+        report();
+        ctx.say(`Categorize finished: ${rows.length} suggestion(s) ready. Click "Categorize" or "Show Categorize" to review them.`);
+      }
     }
   });
 
@@ -254,17 +287,44 @@ export async function categorizeDialog(ctx: AiContext) {
     review.el,
     h("p", { class: "note" }, `${files.length} file(s), ${formatSize(files.reduce((n, f) => n + f.size, 0))}. Nothing changes until you review and apply the plan. Approved decisions are remembered once applied and used as hints next time.`),
   );
+  const minimizeBtn = h("button", { title: "Hide this window and keep going; bring it back from the toolbar", onclick: () => minimize() }, "Minimize");
   const m = modal({
     title: "Categorize",
     content,
-    actions: [suggestBtn, planBtn],
+    actions: [minimizeBtn, suggestBtn, planBtn],
     left: h("span", {}, count, " ", review.controls, " ",
       h("button", { onclick: () => { rows.forEach((r) => (r.approved = true)); tbody.querySelectorAll<HTMLInputElement>("td:first-child input").forEach((c) => (c.checked = true)); updateCount(); } }, "All"),
       h("button", { onclick: () => { rows.forEach((r) => (r.approved = false)); tbody.querySelectorAll<HTMLInputElement>("td:first-child input").forEach((c) => (c.checked = false)); updateCount(); } }, "None")),
-    onClose: () => { if (running) void api.aiCancel(); },
+    onClose: () => {
+      if (running) void api.aiCancel();
+      session = null;
+      minimized = false;
+      onBackground(null);
+    },
   });
+  const minimize = () => {
+    minimized = true;
+    m.hide();
+    report();
+    ctx.say(running ? "Categorize keeps going in the background." : "Categorize minimized.");
+  };
+  session = {
+    reopen: () => {
+      minimized = false;
+      m.show();
+      report();
+    },
+  };
   m.dialog.classList.add("wide");
   review.attach(m.dialog);
+  // Esc during a run minimizes instead of stopping it (Cancel still stops it).
+  // Added after the preview's handler, which uses Esc to leave full screen first.
+  m.dialog.addEventListener("cancel", (ev) => {
+    if (running && !ev.defaultPrevented) {
+      ev.preventDefault();
+      minimize();
+    }
+  });
 }
 
 // ---------- settings ----------
