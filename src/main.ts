@@ -14,7 +14,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ActivityEvent, AppInfo, FileEntry, Kind, PlanOut, RunReport, ScanOptions, UpdateInfo } from "./types";
 import { dupesDialog, helpDialog, historyDialog, planReview, renameDialog, settingsDialog } from "./ui/dialogs";
 import { h, modal } from "./ui/dom";
-import { aiSettingsDialog, categorizeDialog } from "./ui/ai";
+import { aiSettingsDialog, categorizeDialog, reopenCategorize, watchCategorize } from "./ui/ai";
 import { fileByFile } from "./ui/fbf";
 import { soundMenu } from "./ui/sound";
 import { sound } from "./audio/player";
@@ -94,13 +94,19 @@ const moveBtn = h("button", { disabled: true, onclick: () => doMove() }, "Move")
 const trashBtn = h("button", { class: "danger", disabled: true, onclick: () => doTrash() }, "Trash");
 const dupesBtn = h("button", { disabled: true, onclick: () => doDupes() }, "Duplicates");
 const sortBtn = h("button", { disabled: true, title: "Suggest categories and names (local AI optional)", onclick: () => doCategorize() }, "Categorize");
+// Shown while Categorize is minimized: its progress, and a click brings it back.
+const catBgBtn = h("button", { class: "primary cat-bg", hidden: true, title: "Show Categorize", onclick: () => reopenCategorize() });
+watchCategorize((bg) => {
+  catBgBtn.hidden = !bg;
+  if (bg) catBgBtn.textContent = bg.running ? `Show Categorize · ${bg.label}` : `Show Categorize · ${bg.label} ✓`;
+});
 const fbfBtn = h("button", { disabled: true, title: "Go through files one at a time", onclick: () => doFileByFile() }, "File by File");
 const selInfo = h("span", { class: "note" });
 const toolbar = h(
   "div",
   { class: "toolbar" },
   search, kindSelect, sourceSelect, sizeSelect, ageField, agePreset,
-  h("div", { class: "actions" }, selInfo, renameBtn, moveBtn, trashBtn, fbfBtn, sortBtn, dupesBtn),
+  h("div", { class: "actions" }, selInfo, renameBtn, moveBtn, trashBtn, fbfBtn, sortBtn, catBgBtn, dupesBtn),
 );
 
 const preview = new PreviewPane({ fullScreen: true });
@@ -363,6 +369,7 @@ async function doMove() {
 
 /** Selected files, or every visible file when nothing is selected. */
 function doCategorize() {
+  if (reopenCategorize()) return;
   if (!state.root) return;
   const sel = table.selectedEntries();
   categorizeDialog({ root: state.root, entries: sel.length ? sel : state.view, review, say });
