@@ -2,12 +2,13 @@
 //! stream to the UI as `ai-progress` events; approving them produces a
 //! normal plan that goes through the same review, dry run and journal.
 
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use arch_ade_core::ai::hints;
-use arch_ade_core::ai::ollama::{Llm, ModelInfo, Ollama};
+use arch_ade_core::ai::ollama::{Breaker, Llm, ModelInfo, Ollama};
 use arch_ade_core::ai::review::{self, Approved};
 use arch_ade_core::ai::suggest::{Suggester, Suggestion};
 use arch_ade_core::ai::whitelist::{self, Whitelist};
@@ -88,6 +89,8 @@ pub struct SuggestOut {
     /// Why the model wasn't used, when the AI is on but unreachable.
     ai_error: Option<String>,
     cancelled: bool,
+    /// Files skipped because something went wrong while reading them.
+    failed: Vec<String>,
 }
 
 /// Suggestions for `paths` (files only; folders are skipped). With the AI on,
@@ -103,11 +106,17 @@ pub async fn ai_suggest(
     if BUSY.swap(true, Ordering::SeqCst) {
         return Err(Error::Other("suggestions are already running".into()));
     }
+    // Cleared however the run ends, so Suggest never gets stuck as "running".
+    struct Idle;
+    impl Drop for Idle {
+        fn drop(&mut self) {
+            BUSY.store(false, Ordering::SeqCst);
+        }
+    }
+    let _idle = Idle;
     CANCEL.store(false, Ordering::SeqCst);
     let s = state.inner().clone();
-    let out = blocking(move || run_suggest(&app, &s, &paths, &settings)).await;
-    BUSY.store(false, Ordering::SeqCst);
-    out
+    blocking(move || run_suggest(&app, &s, &paths, &settings)).await
 }
 
 fn run_suggest(app: &AppHandle, s: &Shared, paths: &[String], settings: &AiSettings) -> Res<SuggestOut> {
@@ -122,19 +131,21 @@ fn run_suggest(app: &AppHandle, s: &Shared, paths: &[String], settings: &AiSetti
                     .filter(|m| !have(m))
                     .collect();
                 if !missing.is_empty() {
-                    ai_error = Some(format!("not installed in Ollama: {} (ollama pull …)", missing.join(", ")));
+                    ai_error =
+                        Some(not_used(&format!("not installed in Ollama: {} (ollama pull …)", missing.join(", "))));
                 }
                 Some(o)
             }
             Err(e) => {
-                ai_error = Some(e);
+                ai_error = Some(not_used(&e));
                 None
             }
         }
     } else {
         None
     };
-    let llm: Option<&dyn Llm> = ollama.as_ref().map(|o| o as &dyn Llm);
+    let breaker = ollama.as_ref().map(|o| Breaker::new(o));
+    let llm: Option<&dyn Llm> = breaker.as_ref().map(|b| b as &dyn Llm);
     let sg = Suggester {
         db: &s.db,
         ctx: Ctx { db: &s.db, tools: &s.tools, platform: platform::current() },
@@ -145,19 +156,54 @@ fn run_suggest(app: &AppHandle, s: &Shared, paths: &[String], settings: &AiSetti
     let files: Vec<PathBuf> = paths.iter().filter_map(|p| s.scope.check(Path::new(p)).ok()).collect();
     let total = files.len();
     let mut out = Vec::new();
+    let mut failed = Vec::new();
+    let mut cancelled = false;
     for (i, p) in files.iter().enumerate() {
         if CANCEL.load(Ordering::SeqCst) {
-            return Ok(SuggestOut { suggestions: out, ai_error, cancelled: true });
+            cancelled = true;
+            break;
         }
+        // One line per file in the terminal, so if the app ever dies the last
+        // line names the file it was working on.
+        eprintln!("[categorize] {}/{total} {}", i + 1, p.display());
+        let started = Instant::now();
         let parent = p.parent().unwrap_or(p);
-        let Some(entry) = scan::entry_for(parent, p, false, platform::current()).filter(|e| !e.is_dir) else {
-            continue;
+        // A bug tripped by one odd file skips that file instead of ending the run.
+        let sug = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            scan::entry_for(parent, p, false, platform::current()).filter(|e| !e.is_dir).map(|e| sg.suggest(&e))
+        }));
+        let sug = match sug {
+            Ok(Some(sug)) => sug,
+            Ok(None) => continue,
+            Err(_) => {
+                eprintln!("[categorize] skipped {} after an internal error", p.display());
+                failed.push(p.to_string_lossy().into_owned());
+                let _ = app.emit("ai-progress", Progress { done: i + 1, total, suggestion: None });
+                continue;
+            }
         };
-        let sug = sg.suggest(&entry);
+        if let Some(w) = &sug.warning {
+            eprintln!("[categorize]   {:.1}s, {w}", started.elapsed().as_secs_f32());
+        }
         let _ = app.emit("ai-progress", Progress { done: i + 1, total, suggestion: Some(sug.clone()) });
         out.push(sug);
     }
-    Ok(SuggestOut { suggestions: out, ai_error, cancelled: false })
+    if let Some(b) = &breaker {
+        if let Some(why) = b.tripped() {
+            ai_error.get_or_insert(format!(
+                "The AI stopped answering partway through, so the rest were suggested without it ({why})."
+            ));
+        } else if let Some(why) = b.images_off() {
+            ai_error.get_or_insert(format!(
+                "The AI failed on an image, so later images were judged by name and details only ({why})."
+            ));
+        }
+    }
+    Ok(SuggestOut { suggestions: out, ai_error, cancelled, failed })
+}
+
+fn not_used(why: &str) -> String {
+    format!("AI not used: {why}. Showing suggestions without it.")
 }
 
 #[tauri::command]

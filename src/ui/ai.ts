@@ -26,6 +26,9 @@ interface Row {
   newName: string;
 }
 
+/** Suggestion rows drawn at a time; more are drawn as the list scrolls. */
+const ROW_PAGE = 200;
+
 const MODE_LABELS: Record<string, string> = { consistent: "More consistent", refined: "More refined" };
 
 function aiStatus(settings: AiSettings): string {
@@ -152,10 +155,23 @@ export async function categorizeDialog(ctx: AiContext) {
     h("th", {}, "New name"), h("th", { title: "Where the suggestion came from" }, "From"));
   const thead = h("thead", {}, head());
 
+  // Rows are drawn a page at a time as the list is scrolled: thousands of
+  // rows of drop-downs at once can use enough memory for the window to crash.
+  let shown = 0;
+  let limit = ROW_PAGE;
+  const drawMore = () => {
+    while (shown < Math.min(rows.length, limit)) tbody.append(renderRow(rows[shown++]));
+  };
+  const resetRows = () => {
+    rows = [];
+    shown = 0;
+    limit = ROW_PAGE;
+    tbody.replaceChildren();
+  };
   const addRow = (s: Suggestion) => {
     const row: Row = { s, approved: !s.warning || s.source !== "guess", category: s.category, subcategory: s.subcategory, newName: s.newName };
     rows.push(row);
-    tbody.append(renderRow(row));
+    drawMore();
     updateCount();
   };
 
@@ -165,8 +181,7 @@ export async function categorizeDialog(ctx: AiContext) {
       return;
     }
     running = true;
-    rows = [];
-    tbody.replaceChildren();
+    resetRows();
     thead.replaceChildren(head());
     errEl.textContent = "";
     statusEl.textContent = aiStatus(settings);
@@ -186,11 +201,13 @@ export async function categorizeDialog(ctx: AiContext) {
       const out = await api.aiSuggest(files.map((f) => f.path), settings);
       // Events can be dropped if the window was busy; the final list is complete.
       if (out.suggestions.length !== rows.length) {
-        rows = [];
-        tbody.replaceChildren();
+        resetRows();
         out.suggestions.forEach(addRow);
       }
-      if (out.aiError) errEl.textContent = `AI not used: ${out.aiError}. Showing suggestions without it.`;
+      const notes: string[] = [];
+      if (out.aiError) notes.push(out.aiError);
+      if (out.failed.length) notes.push(`Skipped ${out.failed.length} file(s) that couldn't be read: ${out.failed.map((p) => p.split(/[\\/]/).pop()).join(", ")}.`);
+      errEl.textContent = notes.join(" ");
       setBar(out.cancelled ? rows.length : files.length, files.length, out.cancelled ? `Stopped after ${rows.length} of ${files.length}` : `Done: ${rows.length} file(s)`);
     } catch (e) {
       errEl.textContent = String(e);
@@ -216,6 +233,13 @@ export async function categorizeDialog(ctx: AiContext) {
   const review = reviewPreview(h("table", { class: "list ai-review" }, thead, tbody), (tr) => {
     const path = tr.dataset.path;
     return path ? byPath.get(path) ?? entryFor(path) : null;
+  });
+  const scroller = review.el.querySelector<HTMLElement>(".review-table");
+  scroller?.addEventListener("scroll", () => {
+    if (shown < rows.length && scroller.scrollTop + scroller.clientHeight > scroller.scrollHeight - 400) {
+      limit += ROW_PAGE;
+      drawMore();
+    }
   });
   const content = h("div", {},
     h("div", { class: "form-row" },

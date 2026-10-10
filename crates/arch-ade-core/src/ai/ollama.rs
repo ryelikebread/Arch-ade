@@ -114,7 +114,7 @@ impl Llm for Ollama {
             return Err(format!("model {:?} is not installed (run: ollama pull {})", req.model, req.model));
         }
         if status != 200 {
-            return Err(format!("Ollama answered {status}: {}", error_text(&text)));
+            return Err(model_error(status, &error_text(&text)));
         }
         let v: serde_json::Value =
             serde_json::from_str(&text).map_err(|e| format!("unexpected reply from Ollama: {e}"))?;
@@ -132,6 +132,84 @@ fn unreachable(e: ureq::Error) -> String {
             "Ollama isn't running (start the Ollama app, or run `ollama serve`)".into()
         }
         other => other.to_string(),
+    }
+}
+
+/// Ollama answers 500 when the model runner itself dies, usually because
+/// the model didn't fit in memory or choked on an image.
+fn model_error(status: u16, err: &str) -> String {
+    let lower = err.to_ascii_lowercase();
+    if lower.contains("runner process has terminated") || lower.contains("model runner has unexpectedly stopped") {
+        format!(
+            "the model crashed inside Ollama ({err}); this is usually too little free memory: close other apps, pick a smaller model, or turn off Analyze images"
+        )
+    } else {
+        format!("Ollama answered {status}: {err}")
+    }
+}
+
+/// Wraps a model for one run so a failing Ollama can't drag the run out:
+/// after [`Breaker::LIMIT`] failures in a row (down, crashing or timing out)
+/// the model isn't asked again, and after the first failure with an image
+/// attached, images aren't sent again (the suggester then asks by name only).
+/// Without this, every remaining file waits out its own timeout or makes
+/// Ollama reload a model that keeps crashing.
+pub struct Breaker<'a> {
+    inner: &'a dyn Llm,
+    state: std::sync::Mutex<BreakerState>,
+}
+
+#[derive(Default)]
+struct BreakerState {
+    in_a_row: u32,
+    last: Option<String>,
+    image_error: Option<String>,
+}
+
+impl<'a> Breaker<'a> {
+    pub const LIMIT: u32 = 3;
+
+    pub fn new(inner: &'a dyn Llm) -> Self {
+        Breaker { inner, state: Default::default() }
+    }
+
+    fn state(&self) -> std::sync::MutexGuard<'_, BreakerState> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Why images stopped being sent, once they have.
+    pub fn images_off(&self) -> Option<String> {
+        self.state().image_error.clone()
+    }
+
+    /// Why the breaker tripped, once it has.
+    pub fn tripped(&self) -> Option<String> {
+        let st = self.state();
+        (st.in_a_row >= Self::LIMIT).then(|| st.last.clone().unwrap_or_default())
+    }
+}
+
+impl Llm for Breaker<'_> {
+    fn chat(&self, req: &ChatRequest) -> Result<String, String> {
+        if let Some(last) = self.tripped() {
+            return Err(format!("not asked: the model failed {} times in a row (last: {last})", Self::LIMIT));
+        }
+        if !req.images.is_empty() && self.state().image_error.is_some() {
+            return Err("images are off for the rest of this run after an earlier one failed".into());
+        }
+        let out = self.inner.chat(req);
+        let mut st = self.state();
+        match &out {
+            Ok(_) => (st.in_a_row, st.last) = (0, None),
+            Err(e) => {
+                st.in_a_row += 1;
+                st.last = Some(e.clone());
+                if !req.images.is_empty() {
+                    st.image_error = Some(e.clone());
+                }
+            }
+        }
+        out
     }
 }
 

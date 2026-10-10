@@ -320,6 +320,8 @@ export interface SuggestOut {
   suggestions: Suggestion[];
   aiError: string | null;
   cancelled: boolean;
+  /** Files skipped because reading them failed. */
+  failed: string[];
 }
 
 export interface AiProgress {

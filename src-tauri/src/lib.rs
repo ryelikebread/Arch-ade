@@ -32,7 +32,29 @@ pub struct AppState {
 
 pub type Shared = Arc<AppState>;
 
+/// Panics are also appended to `crash.log` in the app data folder, so a
+/// problem can be reported even when the app wasn't started from a terminal.
+fn log_panics() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        default(info);
+        let line = format!(
+            "{} {} on thread {:?}: {info}\n{}\n\n",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            env!("CARGO_PKG_VERSION"),
+            std::thread::current().name().unwrap_or("unnamed"),
+            std::backtrace::Backtrace::force_capture(),
+        );
+        let path = config::app_data_dir().join("crash.log");
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            use std::io::Write;
+            let _ = f.write_all(line.as_bytes());
+        }
+    }));
+}
+
 pub fn run() {
+    log_panics();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

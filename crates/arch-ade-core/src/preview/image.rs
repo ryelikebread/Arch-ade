@@ -5,6 +5,9 @@ use crate::kind::{self, Kind};
 use crate::tools::{self, META_TIMEOUT};
 
 const DECODED_PX: u32 = 1600;
+/// Largest HEIC decoded (200 MP; an iPhone's 48 MP photos are well under).
+#[cfg(feature = "heic")]
+const MAX_HEIC_PIXELS: u64 = 200_000_000;
 
 pub fn preview(path: &Path, md: &std::fs::Metadata, k: Kind, ctx: &Ctx, p: &mut Preview) -> crate::Result<Body> {
     p.details.extend(exif_details(path, md, ctx));
@@ -59,6 +62,11 @@ fn decode_heic(path: &Path) -> Option<Vec<u8>> {
     let lib = LibHeif::new();
     let ctx = HeifContext::read_from_file(path.to_str()?).ok()?;
     let handle = ctx.primary_image_handle().ok()?;
+    // Decoding needs width x height x 4 bytes twice over; stay well clear of
+    // running the machine out of memory on a giant panorama.
+    if u64::from(handle.width()) * u64::from(handle.height()) > MAX_HEIC_PIXELS {
+        return None;
+    }
     let img = lib.decode(&handle, ColorSpace::Rgb(RgbChroma::Rgba), None).ok()?;
     let plane = img.planes().interleaved?;
     let (w, h) = (plane.width, plane.height);

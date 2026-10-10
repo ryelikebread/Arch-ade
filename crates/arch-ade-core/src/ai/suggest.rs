@@ -119,6 +119,18 @@ impl Suggester<'_> {
         if let Some(llm) = self.llm {
             match self.ask(llm, &f, &hints) {
                 Ok(r) => self.apply_reply(&mut s, r, &f, &hints),
+                // A vision model can crash or run out of memory on one
+                // image; judging the file by its name and details still helps.
+                Err(err) if f.image_b64.is_some() => {
+                    let text_only = FileFacts { image_b64: None, ..f.clone() };
+                    match self.ask(llm, &text_only, &hints) {
+                        Ok(r) => {
+                            self.apply_reply(&mut s, r, &f, &hints);
+                            s.warning = Some(format!("AI judged this by name only; the image failed: {err}"));
+                        }
+                        Err(_) => s.warning = Some(format!("AI: {err}")),
+                    }
+                }
                 Err(err) => s.warning = Some(format!("AI: {err}")),
             }
         }
