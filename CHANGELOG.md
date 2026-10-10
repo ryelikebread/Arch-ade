@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-10
+
+- Categorize keeps going when the local AI fails: if the vision model crashes on an image (usually Ollama running out of memory), that file and later images are judged by name and details instead, and after 3 failures in a row the model isn't asked again, with a plain message saying why. Why: Rye reported crashes during AI categorization.
+- Categorize skips a file that trips an internal error instead of ending the whole run, prints one line per file to the terminal, and every app panic is also written to `crash.log` in the app data folder. HEIC files over 200 MP aren't decoded. Why: so a crash can be traced to the file that caused it.
+
 ## 2026-10-09
 
 - One-paste setup: `scripts/setup.sh` (Mac and Linux) and `scripts/setup-windows.ps1` install the prerequisites, clone the repo to ~/Retro-Arch-ade, run npm install and start the app; safe to re-run. SETUP.md has the one line per OS, and a new CI workflow runs both scripts on all three OSes. Why: Rye asked for a copy-and-paste setup per OS.

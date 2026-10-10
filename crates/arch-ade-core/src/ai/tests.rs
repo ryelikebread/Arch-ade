@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use super::hints::{self, Decision, Probe};
 use super::media::{self, MediaTags};
-use super::ollama::{check_local_url, ChatRequest, Llm, Ollama};
+use super::ollama::{check_local_url, Breaker, ChatRequest, Llm, Ollama};
 use super::review::{self, Approved};
 use super::suggest::{clean_part, Source, Suggester};
 use super::whitelist::{self, Whitelist};
@@ -467,6 +467,93 @@ fn images_go_to_the_vision_model_and_screenshots_are_special() {
     e.suggester(&no_pixels, Some(&fake)).suggest(&e.entry("cat.png"));
     assert!(fake.last().images.is_empty());
     assert_eq!(fake.last().model, no_pixels.text_model);
+}
+
+/// Fails whenever an image is attached, like a vision model that crashes.
+struct BlindModel(Mutex<Vec<ChatRequest>>);
+
+impl Llm for BlindModel {
+    fn chat(&self, req: &ChatRequest) -> Result<String, String> {
+        self.0.lock().unwrap().push(req.clone());
+        if req.images.is_empty() {
+            Ok(serde_json::json!({"category":"Images","subcategory":"Photos","name":"Cat Photo","reason":"r"})
+                .to_string())
+        } else {
+            Err("the model crashed inside Ollama".into())
+        }
+    }
+}
+
+#[test]
+fn a_failed_image_is_retried_by_name_only() {
+    let e = env(&[("cat.png", &png(40, 30))]);
+    let model = BlindModel(Mutex::new(vec![]));
+    let settings = on(Mode::Consistent);
+    let s = e.suggester(&settings, Some(&model)).suggest(&e.entry("cat.png"));
+    assert_eq!(s.source, Source::Ai);
+    assert_eq!(s.new_name, "Cat Photo.png");
+    assert!(s.warning.as_deref().unwrap().contains("name only"));
+    let seen = model.0.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[1].model, settings.text_model);
+    assert!(seen[1].images.is_empty());
+}
+
+#[test]
+fn the_breaker_stops_asking_a_failing_model() {
+    let bad = Fake::err("Ollama took too long to answer");
+    let b = Breaker::new(&bad);
+    let req = ChatRequest::default();
+    for _ in 0..Breaker::LIMIT {
+        assert_eq!(b.chat(&req).unwrap_err(), "Ollama took too long to answer");
+    }
+    assert!(b.tripped().unwrap().contains("too long"));
+    assert!(b.chat(&req).unwrap_err().contains("not asked"));
+    assert_eq!(bad.seen.lock().unwrap().len(), Breaker::LIMIT as usize);
+
+    // After one image fails, images aren't sent again; text still is.
+    let blind = BlindModel(Mutex::new(vec![]));
+    let b = Breaker::new(&blind);
+    let pic = ChatRequest { images: vec!["AAAA".into()], ..Default::default() };
+    assert!(b.chat(&pic).unwrap_err().contains("crashed"));
+    assert!(b.chat(&req).is_ok());
+    assert!(b.chat(&pic).unwrap_err().contains("images are off"));
+    assert!(b.chat(&req).is_ok());
+    assert_eq!(blind.0.lock().unwrap().len(), 3);
+    assert!(b.tripped().is_none());
+
+    // Successes in between keep it closed.
+    let flaky = Flaky(Mutex::new(0));
+    let b = Breaker::new(&flaky);
+    for _ in 0..10 {
+        let _ = b.chat(&req);
+    }
+    assert!(b.tripped().is_none());
+}
+
+/// Fails every other call.
+struct Flaky(Mutex<u32>);
+
+impl Llm for Flaky {
+    fn chat(&self, _: &ChatRequest) -> Result<String, String> {
+        let mut n = self.0.lock().unwrap();
+        *n += 1;
+        if n.is_multiple_of(2) {
+            Ok("{}".into())
+        } else {
+            Err("down".into())
+        }
+    }
+}
+
+#[test]
+fn a_crashed_model_runner_gets_a_plain_explanation() {
+    let (url, h) =
+        serve_once("500 Internal Server Error", r#"{"error":"llama runner process has terminated: signal: killed"}"#);
+    let o = Ollama::new(&url, Duration::from_secs(5)).unwrap();
+    let err = o.chat(&ChatRequest { model: "gemma3:4b".into(), ..Default::default() }).unwrap_err();
+    assert!(err.contains("crashed inside Ollama") && err.contains("memory"), "{err}");
+    h.join().unwrap();
 }
 
 #[test]

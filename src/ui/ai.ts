@@ -190,7 +190,10 @@ export async function categorizeDialog(ctx: AiContext) {
         tbody.replaceChildren();
         out.suggestions.forEach(addRow);
       }
-      if (out.aiError) errEl.textContent = `AI not used: ${out.aiError}. Showing suggestions without it.`;
+      const notes: string[] = [];
+      if (out.aiError) notes.push(out.aiError);
+      if (out.failed.length) notes.push(`Skipped ${out.failed.length} file(s) that couldn't be read: ${out.failed.map((p) => p.split(/[\\/]/).pop()).join(", ")}.`);
+      errEl.textContent = notes.join(" ");
       setBar(out.cancelled ? rows.length : files.length, files.length, out.cancelled ? `Stopped after ${rows.length} of ${files.length}` : `Done: ${rows.length} file(s)`);
     } catch (e) {
       errEl.textContent = String(e);
