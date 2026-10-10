@@ -4,6 +4,7 @@
 
 - Categorize keeps going when the local AI fails: if the vision model crashes on an image (usually Ollama running out of memory), that file and later images are judged by name and details instead, and after 3 failures in a row the model isn't asked again, with a plain message saying why. Why: Rye reported crashes during AI categorization.
 - Categorize skips a file that trips an internal error instead of ending the whole run, prints one line per file to the terminal, and every app panic is also written to `crash.log` in the app data folder. HEIC files over 200 MP aren't decoded. Why: so a crash can be traced to the file that caused it.
+- The Categorize list draws its rows 200 at a time as you scroll instead of all at once; on 10,000 files the window's memory went from about 1.06 GB to 0.55 GB. Why: Rye said the crashes happen on large batches.
 
 ## 2026-10-09
 
