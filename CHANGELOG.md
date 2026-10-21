@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-21
+
+- Only one Apply, Undo or Redo runs at a time. Before, a double-clicked Apply, or the rules watcher applying a plan during an Undo, could run steps twice and leave Undo unable to reverse them. Why: code audit Rye asked for.
+- Moving a file to another drive copies it under a hidden temporary name first, keeps its modified date, and never overwrites a file that appeared at the destination in the meantime. A case-only rename (a.txt to A.txt) now refuses to replace a different file on a case-sensitive Mac volume. Why: code audit; both could lose or misdate files.
+- The rules watcher keeps running after an internal error on one folder, and a crash in one part of the app no longer makes later actions crash too. Why: code audit.
+
 ## 2026-10-10
 
 - Categorize keeps going when the local AI fails: if the vision model crashes on an image (usually Ollama running out of memory), that file and later images are judged by name and details instead, and after 3 failures in a row the model isn't asked again, with a plain message saying why. Why: Rye reported crashes during AI categorization.

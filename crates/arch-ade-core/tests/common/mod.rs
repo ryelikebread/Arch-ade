@@ -21,6 +21,8 @@ pub struct FakeTrash {
     pub tags: Mutex<HashMap<PathBuf, Vec<u8>>>,
     /// Act like Windows, which has no file tags.
     pub no_tags: AtomicBool,
+    /// Use the Mac's case-insensitive name rules.
+    pub mac_names: AtomicBool,
 }
 
 impl Platform for FakeTrash {
@@ -28,7 +30,11 @@ impl Platform for FakeTrash {
         Os::Linux
     }
     fn name_rules(&self) -> NameRules {
-        NameRules::Linux
+        if self.mac_names.load(Ordering::Relaxed) {
+            NameRules::Macos
+        } else {
+            NameRules::Linux
+        }
     }
     fn modifier_label(&self) -> &'static str {
         "Ctrl"
@@ -110,6 +116,7 @@ pub fn env(files: &[(&str, &str)]) -> Env {
             n: Mutex::new(0),
             tags: Mutex::new(HashMap::new()),
             no_tags: AtomicBool::new(false),
+            mac_names: AtomicBool::new(false),
         },
     }
 }

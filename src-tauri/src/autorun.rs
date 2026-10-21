@@ -51,18 +51,18 @@ pub fn set_watched(s: &Shared, folders: &[PathBuf]) -> arch_ade_core::Result<Vec
             Err(e) => tracing::warn!("not watching {}: {e}", f.display()),
         }
     }
-    let mut watched = s.watched.lock().unwrap();
+    let mut watched = crate::lock(&s.watched);
     watched.clear(); // drops the old watchers
     for f in &canon {
         let ap = s.autopilot.clone();
         let w = watch::watch(f, false, move |paths| {
-            ap.lock().unwrap().notice(paths, Instant::now());
+            crate::lock(&ap).notice(paths, Instant::now());
         })
         .map_err(|e| tracing::warn!("cannot watch {}: {e}", f.display()))
         .ok();
         watched.push((f.clone(), w));
     }
-    *s.autopilot.lock().unwrap() = arch_ade_core::autopilot::Autopilot::new(canon.clone());
+    *crate::lock(&s.autopilot) = arch_ade_core::autopilot::Autopilot::new(canon.clone());
     let as_strings: Vec<String> = canon.iter().map(|p| p.to_string_lossy().into_owned()).collect();
     s.db.set_setting(WATCHED_KEY, &serde_json::json!(as_strings))?;
     Ok(canon)
@@ -85,10 +85,16 @@ pub fn start(app: AppHandle, s: Shared) {
         .name("rules".into())
         .spawn(move || loop {
             std::thread::sleep(Duration::from_secs(1));
-            let ready = s.autopilot.lock().unwrap().ready(Instant::now());
+            let ready = crate::lock(&s.autopilot).ready(Instant::now());
             for (folder, files) in ready {
-                if let Err(e) = run_folder(&app, &s, &folder, &files) {
-                    tracing::warn!("rules on {}: {e}", folder.display());
+                // A panic on one folder (it's written to crash.log) must not
+                // end this thread, or the rules would quietly stop until restart.
+                let run =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_folder(&app, &s, &folder, &files)));
+                match run {
+                    Ok(Err(e)) => tracing::warn!("rules on {}: {e}", folder.display()),
+                    Err(_) => tracing::error!("rules on {} stopped with a panic", folder.display()),
+                    Ok(Ok(())) => {}
                 }
             }
         })
@@ -102,7 +108,7 @@ fn run_folder(app: &AppHandle, s: &Shared, folder: &Path, files: &[PathBuf]) -> 
     }
     let org = Organizer { db: &s.db, scope: &s.scope, platform: platform::current(), places: &s.places };
     let run = org.auto_run(&all, folder, files, crate::commands::dry_run_on(s))?;
-    s.autopilot.lock().unwrap().produced(run.produced.iter().cloned(), Instant::now());
+    crate::lock(&s.autopilot).produced(run.produced.iter().cloned(), Instant::now());
     if run.outcome != Outcome::Nothing {
         let _ = app.emit(
             "rules-activity",

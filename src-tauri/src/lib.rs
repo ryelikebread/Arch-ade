@@ -32,6 +32,13 @@ pub struct AppState {
 
 pub type Shared = Arc<AppState>;
 
+/// Lock a piece of app state. If code panicked while holding it, the value
+/// is still usable (each is replaced whole), so keep going instead of
+/// turning one panic into a crash on every later call.
+pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Panics are also appended to `crash.log` in the app data folder, so a
 /// problem can be reported even when the app wasn't started from a terminal.
 fn log_panics() {

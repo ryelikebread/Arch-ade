@@ -23,7 +23,7 @@ pub fn plan_one(state: State<'_, Shared>, path: String, decision: Decision) -> R
 /// Subfolders of the open folder, for the Move quick-pick.
 #[tauri::command]
 pub fn fbf_folders(state: State<'_, Shared>) -> Res<Vec<String>> {
-    let root = state.root.lock().unwrap().clone().ok_or_else(|| Error::Other("no folder open".into()))?;
+    let root = crate::lock(&state.root).clone().ok_or_else(|| Error::Other("no folder open".into()))?;
     Ok(onebyone::subfolders(&root).iter().map(|p| p.to_string_lossy().into_owned()).collect())
 }
 

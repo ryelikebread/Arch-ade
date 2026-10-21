@@ -92,7 +92,7 @@ pub async fn open_folder(
     let s = state.inner().clone();
     let root = s.scope.add_root(Path::new(&path))?;
     allow_assets(&app, &root);
-    *s.root.lock().unwrap() = Some(root.clone());
+    *crate::lock(&s.root) = Some(root.clone());
 
     let emitter = app.clone();
     let w = watch::watch(&root, options.recursive, move |paths| {
@@ -101,7 +101,7 @@ pub async fn open_folder(
     })
     .map_err(|e| tracing::warn!("watcher unavailable: {e}"))
     .ok();
-    *s.watch.lock().unwrap() = w;
+    *crate::lock(&s.watch) = w;
     let _ = s.db.set_setting("lastFolder", &serde_json::json!(root.to_string_lossy()));
 
     blocking(move || scan::scan(&root, options, platform::current())).await
@@ -141,7 +141,7 @@ pub fn allow_destination(app: AppHandle, state: State<'_, Shared>, path: String,
 
 #[tauri::command]
 pub async fn rescan(state: State<'_, Shared>, options: ScanOptions) -> Res<ScanResult> {
-    let root = state.root.lock().unwrap().clone().ok_or_else(|| Error::Other("no folder open".into()))?;
+    let root = crate::lock(&state.root).clone().ok_or_else(|| Error::Other("no folder open".into()))?;
     blocking(move || scan::scan(&root, options, platform::current())).await
 }
 
@@ -301,7 +301,7 @@ fn quiet_after(s: &Shared, report: Option<&RunReport>) {
     let Some(r) = report else { return };
     if let Ok((plan, _)) = Journal::new(&s.db, &s.scope, platform::current()).load(r.plan_id) {
         let paths = organize::produced_paths(&plan);
-        s.autopilot.lock().unwrap().produced(paths, std::time::Instant::now());
+        crate::lock(&s.autopilot).produced(paths, std::time::Instant::now());
     }
 }
 
@@ -401,7 +401,7 @@ pub async fn plan_rules(
     let s = state.inner().clone();
     let folder = match folder {
         Some(f) => PathBuf::from(f),
-        None => s.root.lock().unwrap().clone().ok_or_else(|| Error::Other("no folder open".into()))?,
+        None => crate::lock(&s.root).clone().ok_or_else(|| Error::Other("no folder open".into()))?,
     };
     blocking(move || {
         let rules = match rules {
@@ -453,8 +453,8 @@ pub struct Watched {
 
 #[tauri::command]
 pub fn watched_folders(state: State<'_, Shared>) -> Watched {
-    let folders = state.watched.lock().unwrap().iter().map(|(p, _)| p.to_string_lossy().into_owned()).collect();
-    Watched { folders, pending: state.autopilot.lock().unwrap().pending_count() }
+    let folders = crate::lock(&state.watched).iter().map(|(p, _)| p.to_string_lossy().into_owned()).collect();
+    Watched { folders, pending: crate::lock(&state.autopilot).pending_count() }
 }
 
 #[tauri::command]

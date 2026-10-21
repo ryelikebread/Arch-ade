@@ -279,3 +279,41 @@ fn reviving_checks_the_files_as_they_are_now() {
     assert!(msg(gone).contains("gone"), "{}", msg(gone));
     assert!(msg(taken).contains("already exists"), "{}", msg(taken));
 }
+
+#[test]
+fn same_plan_applied_twice_at_once_runs_once() {
+    // A double-clicked Apply, or the rules watcher racing the user: only one
+    // run may happen, and Undo must still find every step.
+    let e = env(&[("a.txt", "A"), ("b.txt", "B")]);
+    let j = Journal::new(&e.db, &e.scope, &e.fake);
+    let plan = Planner::new(&e.scope, NameRules::Linux)
+        .moves(&[(e.root.join("a.txt"), e.root.join("x/a.txt")), (e.root.join("b.txt"), e.root.join("x/b.txt"))], "mv");
+    let id = j.save(&plan).unwrap();
+    let results: Vec<_> = std::thread::scope(|s| {
+        let runs: Vec<_> = (0..2).map(|_| s.spawn(|| Journal::new(&e.db, &e.scope, &e.fake).apply(id))).collect();
+        runs.into_iter().map(|t| t.join().unwrap()).collect()
+    });
+    assert_eq!(results.iter().filter(|r| r.as_ref().is_ok_and(|r| r.status == "applied")).count(), 1, "{results:?}");
+    assert_eq!(results.iter().filter(|r| r.is_err()).count(), 1, "{results:?}");
+    assert_eq!(j.undo().unwrap().unwrap().status, "undone");
+    assert_eq!(read(&e.root.join("a.txt")), "A");
+    assert_eq!(read(&e.root.join("b.txt")), "B");
+}
+
+#[test]
+fn case_only_rename_never_overwrites_a_different_file() {
+    // A case-sensitive volume where a.txt and A.txt are two files, planned
+    // with case-insensitive name rules (as on a Mac).
+    let e = env(&[("a.txt", "lower"), ("A.txt", "upper")]);
+    if read(&e.root.join("a.txt")) != "lower" {
+        return; // this filesystem folds case; nothing to test
+    }
+    e.fake.mac_names.store(true, std::sync::atomic::Ordering::Relaxed);
+    let j = Journal::new(&e.db, &e.scope, &e.fake);
+    let plan = Planner::new(&e.scope, NameRules::Macos).moves(&[(e.root.join("a.txt"), e.root.join("A.txt"))], "case");
+    let id = j.save(&plan).unwrap();
+    let r = j.apply(id).unwrap();
+    assert!(r.error.is_some(), "{r:?}");
+    assert_eq!(read(&e.root.join("a.txt")), "lower");
+    assert_eq!(read(&e.root.join("A.txt")), "upper");
+}

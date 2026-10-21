@@ -173,17 +173,45 @@ pub fn move_path(src: &Path, dst: &Path) -> Result<()> {
                     src.display()
                 )));
             }
-            std::fs::copy(src, dst)?;
-            let copied = std::fs::metadata(dst)?.len();
-            if copied != md.len() {
-                let _ = std::fs::remove_file(dst);
-                return Err(crate::Error::Other("copy size mismatch".into()));
-            }
+            copy_across(src, dst, &md)?;
             std::fs::remove_file(src)?;
             Ok(())
         }
         Err(e) => Err(e.into()),
     }
+}
+
+/// The copy half of a cross-drive move. Writes under a temporary name next
+/// to `dst` and only renames it into place once the size matches, so a crash
+/// or a full drive never leaves a half-copied file under the real name, and
+/// an existing `dst` is never overwritten. The modified date is kept, since
+/// rules and sorting go by it.
+fn copy_across(src: &Path, dst: &Path, md: &std::fs::Metadata) -> Result<()> {
+    if std::fs::symlink_metadata(dst).is_ok() {
+        return Err(crate::Error::Plan(format!("{} already exists", dst.display())));
+    }
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let tmp = dst.with_file_name(format!(".arch-ade-partial-{stamp}"));
+    let result = (|| -> Result<()> {
+        std::fs::copy(src, &tmp)?;
+        let copied = std::fs::symlink_metadata(&tmp)?.len();
+        if copied != md.len() {
+            return Err(crate::Error::Other(format!("copy of {} came out the wrong size", src.display())));
+        }
+        if let Ok(modified) = md.modified() {
+            // Best effort: some drives (FAT, network shares) refuse it.
+            let _ = std::fs::File::options().write(true).open(&tmp).and_then(|f| f.set_modified(modified));
+        }
+        if std::fs::symlink_metadata(dst).is_ok() {
+            return Err(crate::Error::Plan(format!("{} already exists", dst.display())));
+        }
+        std::fs::rename(&tmp, dst)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
 }
 
 pub(crate) fn exe_suffixes() -> &'static [&'static str] {
@@ -285,6 +313,30 @@ fn same_trash_path(listed: &Path, ours: &Path) -> bool {
         a.to_lowercase() == b.to_lowercase()
     } else {
         a == b
+    }
+}
+
+#[cfg(test)]
+mod move_tests {
+    #[test]
+    fn copy_across_keeps_date_and_never_overwrites() {
+        let d = tempfile::tempdir().unwrap();
+        let (src, dst) = (d.path().join("a.txt"), d.path().join("b.txt"));
+        std::fs::write(&src, "hello").unwrap();
+        let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_600_000_000);
+        std::fs::File::options().write(true).open(&src).unwrap().set_modified(old).unwrap();
+        let md = std::fs::symlink_metadata(&src).unwrap();
+        super::copy_across(&src, &dst, &md).unwrap();
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "hello");
+        assert_eq!(std::fs::metadata(&dst).unwrap().modified().unwrap(), old);
+        // A second copy onto the now-existing target is refused and leaves no temp file.
+        std::fs::write(&src, "other").unwrap();
+        let md = std::fs::symlink_metadata(&src).unwrap();
+        assert!(super::copy_across(&src, &dst, &md).is_err());
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "hello");
+        let partial =
+            std::fs::read_dir(d.path()).unwrap().flatten().any(|e| e.file_name().to_string_lossy().contains("partial"));
+        assert!(!partial);
     }
 }
 

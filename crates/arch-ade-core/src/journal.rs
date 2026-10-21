@@ -118,6 +118,18 @@ fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+/// Only one apply, undo or redo touches disk at a time. Without this, a
+/// double-clicked Apply could run the same plan twice, and the rules watcher
+/// could apply a plan in the middle of the user's Undo; either way the
+/// journal would no longer match the files and Undo could miss steps.
+static RUN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn run_lock() -> std::sync::MutexGuard<'static, ()> {
+    // A panic in an earlier run leaves nothing half-held: the journal rows
+    // are the state, so carry on.
+    RUN_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 impl<'a> Journal<'a> {
     pub fn new(db: &'a Db, scope: &'a Scope, platform: &'a dyn Platform) -> Self {
         Journal { db, scope, platform }
@@ -148,6 +160,7 @@ impl<'a> Journal<'a> {
 
     /// Execute a saved plan.
     pub fn apply(&self, id: i64) -> Result<RunReport> {
+        let _running = run_lock();
         let (plan, status) = self.load(id)?;
         if status != "planned" {
             return Err(Error::Plan(format!("plan {id} is {status}, not ready to apply")));
@@ -193,6 +206,7 @@ impl<'a> Journal<'a> {
 
     /// Reverse the most recent applied plan.
     pub fn undo(&self) -> Result<Option<RunReport>> {
+        let _running = run_lock();
         let Some(id) = self.can_undo()? else { return Ok(None) };
         let (plan, _) = self.load(id)?;
         let live = self.live_ops(id)?;
@@ -231,6 +245,7 @@ impl<'a> Journal<'a> {
 
     /// Re-apply the most recently undone plan.
     pub fn redo(&self) -> Result<Option<RunReport>> {
+        let _running = run_lock();
         let Some(id) = self.can_redo()? else { return Ok(None) };
         let (plan, _) = self.load(id)?;
         self.db
@@ -486,6 +501,14 @@ impl<'a> Journal<'a> {
                     // a.txt -> A.txt on a case-insensitive volume: go through a temp name.
                     let tmp = from.with_file_name(format!(".arch-ade-case-{}", now_ms()));
                     std::fs::rename(&from, &tmp)?;
+                    // With the file parked under the temp name, the new name
+                    // must be free. If it still exists, it's a different file
+                    // (a case-sensitive volume holding both a.txt and A.txt),
+                    // and renaming onto it would overwrite it.
+                    if std::fs::symlink_metadata(&to).is_ok() {
+                        let _ = std::fs::rename(&tmp, &from);
+                        return Err(Error::Plan(format!("{} already exists", to.display())));
+                    }
                     if let Err(e) = std::fs::rename(&tmp, &to) {
                         let _ = std::fs::rename(&tmp, &from);
                         return Err(e.into());
