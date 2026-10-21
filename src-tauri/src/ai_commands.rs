@@ -224,7 +224,7 @@ pub async fn ai_plan(
     blocking(move || {
         let dest = match dest {
             Some(d) => PathBuf::from(d),
-            None => s.root.lock().unwrap().clone().ok_or_else(|| Error::Other("no folder open".into()))?,
+            None => crate::lock(&s.root).clone().ok_or_else(|| Error::Other("no folder open".into()))?,
         };
         // Only folders inside it are created or written; the planner checks each one.
         let dest = s.scope.check_readable(&dest)?;

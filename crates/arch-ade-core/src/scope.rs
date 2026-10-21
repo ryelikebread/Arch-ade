@@ -22,7 +22,7 @@ impl Scope {
         if !canon.is_dir() {
             return Err(Error::Other(format!("{} is not a folder", root.display())));
         }
-        let mut roots = self.roots.write().expect("scope lock");
+        let mut roots = self.roots.write().unwrap_or_else(|e| e.into_inner());
         if !roots.contains(&canon) {
             roots.push(canon.clone());
         }
@@ -30,7 +30,7 @@ impl Scope {
     }
 
     pub fn roots(&self) -> Vec<PathBuf> {
-        self.roots.read().expect("scope lock").clone()
+        self.roots.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Resolve `path` (which may not exist yet) and make sure it is strictly
@@ -40,7 +40,7 @@ impl Scope {
     /// its target.
     pub fn check(&self, path: &Path) -> Result<PathBuf> {
         let resolved = resolve_lexically_safe(path)?;
-        let roots = self.roots.read().expect("scope lock");
+        let roots = self.roots.read().unwrap_or_else(|e| e.into_inner());
         if roots.iter().any(|r| resolved.starts_with(r) && resolved != *r) {
             Ok(resolved)
         } else {
@@ -52,7 +52,7 @@ impl Scope {
     /// (for reading/listing, never as an operation target).
     pub fn check_readable(&self, path: &Path) -> Result<PathBuf> {
         let resolved = resolve_lexically_safe(path)?;
-        let roots = self.roots.read().expect("scope lock");
+        let roots = self.roots.read().unwrap_or_else(|e| e.into_inner());
         if roots.iter().any(|r| resolved.starts_with(r)) {
             Ok(resolved)
         } else {
