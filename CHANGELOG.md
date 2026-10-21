@@ -2,6 +2,9 @@
 
 ## 2026-10-21
 
+- New Dragon Hoard skin for File by File, with Lair Radio (two original songs) and its own sound effects. A red dragon smoking a gilded hookah and his adoring princess sit on a gold hoard (gems, the Ark, the Holy Grail, the Sopranos-ending film reel); each decision kills the adventurer holding the glittering file in one of 15 ways, the princess cheers, their bones join a growing pile and an adventurer of another class (10 in turn) walks in. Rename wasn't specified, so it is a fire-branded name tag, a cursed scroll from the princess's quill, or a name in smoke while the adventurer drinks from the wrong grail. Why: Rye asked for this skin.
+- Skin manifests gain `cast` (roles that pass to the next member after each decision, e.g. a new adventurer per file) and `idle` scenery (drawn only between animations). The dev skin preview gains `&idle=1`. Why: needed for the Dragon Hoard adventurers.
+
 - Only one Apply, Undo or Redo runs at a time. Before, a double-clicked Apply, or the rules watcher applying a plan during an Undo, could run steps twice and leave Undo unable to reverse them. Why: code audit Rye asked for.
 - Moving a file to another drive copies it under a hidden temporary name first, keeps its modified date, and never overwrites a file that appeared at the destination in the meantime. A case-only rename (a.txt to A.txt) now refuses to replace a different file on a case-sensitive Mac volume. Why: code audit; both could lose or misdate files.
 - The rules watcher keeps running after an internal error on one folder, and a crash in one part of the app no longer makes later actions crash too. Why: code audit.

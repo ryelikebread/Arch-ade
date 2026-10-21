@@ -46,13 +46,14 @@ The built-in skins are good examples: `src/skins/builtin/volcano/manifest.json` 
 | `id` | Lowercase letters, digits and `-`. Must not clash with another skin. |
 | `size` | Stage size in pixels (32..640 by 32..360). It's scaled up by whole numbers, pixelated. |
 | `bands` | Optional background: horizontal color stripes from each `y` down to the next. |
-| `scene` | Sprites always drawn under everything; with `fps`, multi-frame ones animate slowly. A scene sprite can also change as decisions add up, see [Scene that changes](#scene-that-changes). |
+| `scene` | Sprites always drawn under everything; with `fps`, multi-frame ones animate slowly. A scene sprite can also change as decisions add up, see [Scene that changes](#scene-that-changes). `"idle": true` draws it only between animations (when the animations draw that character themselves). |
 | `file` | Where the current file's icon (16x16) waits for a decision. |
 | `sprites` | Rectangles on the sheet. `frames` copies sit side by side, left to right. `file` is reserved. |
 | `sounds` | Optional sound effects per decision, see below. |
 | `animations` | One per decision: `keep`, `move`, `rename`, `trash` are required; `delete` is optional and falls back to `trash`. Duration is 100..10000 ms. |
 | `variants` | Optional extra animations per decision; each time, one of the main animation and its variants is picked at random. See [Variants](#variants). |
 | `encore` | Optional bonus animation after every few decisions, see [Encore](#encore). |
+| `cast` | Optional roles played by a different set of sprites after each decision, see [Cast](#cast). |
 | `music` | Optional id of a built-in song to play while this skin is on (it replaces the chosen built-in station; My Music is left alone). |
 
 ## Tracks
@@ -128,6 +129,26 @@ kinds (one of `animations`, picked at random). Up to 8 animations; each may carr
 ```
 
 Bank Heist uses this: after every fifth move the crew makes its getaway.
+
+## Cast
+
+A cast role swaps who plays it after every decision. Name the members, then use
+`"@role.suffix"` as a sprite in a track or a scene prop: it means `<member>.suffix` for the
+member whose turn it is. `"@role+1.suffix"` is the member after them (the next one in line).
+
+```json
+"cast": { "hero": { "members": ["knight", "wizard"] } },
+"scene": [{ "sprite": "@hero.wait", "x": 16, "y": 76, "idle": true }],
+"animations": { "trash": { "duration": 2400, "tracks": [
+  { "sprite": "@hero.burnt", "keys": [{ "t": 0.3, "x": 16, "y": 76 }, { "t": 0.6, "x": 16, "y": 76 }] },
+  { "sprite": "@hero+1.walk", "fps": 8, "keys": [{ "t": 0.7, "x": -16, "y": 76 }, { "t": 1, "x": 16, "y": 76 }] }
+] } }
+```
+
+Every member needs every suffix the skin uses (`knight.wait`, `wizard.wait`, ...). The turn
+is the number of decisions so far (only those listed in `on`, if given), wrapping round the
+members; Undo steps it back. Up to 8 roles of up to 32 members. Dragon Hoard uses this so a
+new adventurer of a different class walks in after every decision.
 
 ## Undo
 

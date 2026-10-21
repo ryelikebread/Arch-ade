@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normalize, textWidth, _glyphsForTest } from "../pixel/font";
 import space from "./builtin/space/manifest.json";
 import volcano from "./builtin/volcano/manifest.json";
-import { animationFor, caption, ease, encoreFor, frameAt, poseAt, propSprite, validateSkin, type SkinManifest } from "./format";
+import { animationFor, caption, castMember, ease, encoreFor, frameAt, parseCastRef, poseAt, propSprite, resolveSprite, validateSkin, type SkinManifest } from "./format";
 
 describe("skin manifests", () => {
   it("built-in skins are valid and animate every action", () => {
@@ -65,6 +65,30 @@ describe("skin manifests", () => {
     expect(propSprite(p, {})).toBe(sprite);
     expect(propSprite(p, { keep: 1, move: 4 })).toBe(sprite + "1");
     expect(propSprite(p, { keep: 9 })).toBe(sprite + "2");
+  });
+
+  it("casts a new member in a role after each decision", () => {
+    const m = JSON.parse(JSON.stringify(volcano));
+    const sprite = Object.keys(m.sprites)[0];
+    m.sprites["ann.walk"] = m.sprites["bo.walk"] = m.sprites[sprite];
+    m.cast = { hero: { members: ["ann", "bo"] } };
+    m.scene.push({ sprite: "@hero.walk", x: 0, y: 0, idle: true });
+    m.animations.keep.tracks.push({ sprite: "@hero+1.walk", keys: [{ t: 0, x: 0, y: 0 }] });
+    const ok = validateSkin(m) as SkinManifest;
+    expect(Array.isArray(ok) ? ok : []).toEqual([]);
+    expect(parseCastRef("@hero+1.walk")).toEqual({ role: "hero", ahead: 1, suffix: ".walk" });
+    expect(parseCastRef("plain")).toBeNull();
+    expect(castMember(ok.cast!.hero, {})).toBe("ann");
+    expect(resolveSprite(ok, "@hero.walk", { trash: 1 })).toBe("bo.walk");
+    expect(resolveSprite(ok, "@hero+1.walk", { trash: 1 })).toBe("ann.walk"); // wraps round
+    expect(resolveSprite(ok, sprite, { trash: 1 })).toBe(sprite);
+    // A member missing a pose, an unknown role and a bad idle flag are all caught.
+    delete m.sprites["bo.walk"];
+    m.scene.push({ sprite: "@villain.walk", x: 0, y: 0 }, { sprite, x: 0, y: 0, idle: "yes" });
+    const errs = (validateSkin(m) as string[]).join("\n");
+    expect(errs).toMatch(/unknown sprite @hero.walk/);
+    expect(errs).toMatch(/unknown sprite @villain.walk/);
+    expect(errs).toMatch(/idle must be true or false/);
   });
 });
 

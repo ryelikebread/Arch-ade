@@ -209,8 +209,17 @@ turns each file into the loot, with the crew shown in comic panels underneath: m
 successful job (the van fills up and every fifth move ends in a getaway by van, sewer or a
 cool walk from an explosion), rename is a decoy swap or a double-cross, trash is a dye pack,
 crossfire, a superhero brawl or a car crash, and keep is the SWAT team, a hero cop or the
-vault door shutting with the thief inside. Each time, the outcome is picked at random. These
-four each have their own theme music and sound effects.
+vault door shutting with the thief inside. *Dragon Hoard* sets a red dragon (puffing smoke
+rings from a gilded hookah) and his adoring princess on a mountain of gold; an adventurer
+holds up the glittering file to challenge him and meets a sticky end every time: keep
+(plucked and tossed, turned to gold, eaten by a mimic, buried in coins), move (kissed by the
+princess and the file filed on the sorted piles, placed there by the dragon's claw, or
+carried off by a whelp while the adventurer opens the Ark), rename (the new name fire-branded
+on a gold tag, written on a cursed scroll, or drifting up in smoke while the adventurer drinks
+from the wrong grail), trash (stomped flat, burned to ash, eaten whole, tail-swatted) and
+delete (devoured for good). Their bones pile up in the corner and a new adventurer of another
+class walks in. Each time, the outcome is picked at random. These five each have their own
+theme music and sound effects.
 Skins are a sprite sheet plus a JSON manifest, so you can make your own: put them in
 `<app data>/skins/<name>/` (see [docs/SKINS.md](docs/SKINS.md)). The built-in sheets are
 original art drawn in code: `npm run build-skins` regenerates them from `scripts/skins/`.
@@ -222,12 +231,12 @@ Skins can also name sound effects for each decision (see [Sound](#sound)).
 arcade-style options screen. Use ↑ ↓ to pick a row, ← → to change it, Enter to toggle,
 Esc to leave. Music starts paused; everything is remembered.
 
-- **Station**: thirteen built-in stations of original chiptune made for Arch-ade (Arch-ade
+- **Station**: fifteen built-in stations of original chiptune made for Arch-ade (Arch-ade
   FM, Island Radio, Orbit FM, Boss Rush, Lobby Lounge, Night Drive, Quest FM, Study Hall,
-  plus Pigeon Court Radio, Kitchen Radio and Castle Radio from the skins), plus **My Music**.
-  Each song plays twice, then the station moves on; **Now playing** skips ahead. While
-  Pigeon Court, Peasoup or Royal Court is on in File by File, its theme plays instead of a
-  built-in station.
+  plus Pigeon Court Radio, Kitchen Radio, Castle Radio, Heist Radio and Lair Radio from the
+  skins), plus **My Music**. Each song plays twice, then the station moves on; **Now
+  playing** skips ahead. While a skin with a theme (Pigeon Court, Peasoup, Royal Court, Bank
+  Heist, Dragon Hoard) is on in File by File, its theme plays instead of a built-in station.
 - **Music**: play or pause. **Music volume** and **Music mute** are separate from pause.
 - **Sound FX** and **FX volume**: every skin but Minimal plays effects with its
   animations (a volcano rumble, a gavel, a bubbling pot, a fanfare). Minimal stays silent.
