@@ -14,7 +14,7 @@ const only = process.argv[2];
 for (const f of readdirSync(dir).sort()) {
   if (!f.endsWith(".mjs") || f === "lib.mjs" || (only && f !== `${only}.mjs`)) continue;
   const skin = await import(pathToFileURL(join(dir, f)).href);
-  const { sheet, rects } = pack(skin.sprites);
+  const { sheet, rects } = pack(skin.sprites, skin.sheetWidth);
   const out = join(root, "src/skins/builtin", skin.manifest.id);
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "sheet.png"), png(sheet));

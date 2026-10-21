@@ -67,6 +67,20 @@ export interface Prop {
    * files are kept.
    */
   tally?: { on: SkinEvent[]; sprites: string[] };
+  /** Only drawn while no animation plays (the animations draw it themselves). */
+  idle?: boolean;
+}
+
+/**
+ * A role played by a different sprite set after each decision: a track or
+ * prop sprite "@hero.walk" means "<member>.walk" for the member whose turn
+ * it is ("@hero+1.walk" is the one after). The turn is the number of
+ * decisions in `on` (default: all) so far, wrapping around `members`.
+ * Example: a new adventurer for every file.
+ */
+export interface Cast {
+  on?: SkinEvent[];
+  members: string[];
 }
 
 export interface Animation {
@@ -110,6 +124,8 @@ export interface SkinManifest {
    * Example: after every 5th move the crew escapes in the van.
    */
   encore?: Encore;
+  /** Roles that change hands after decisions, see Cast. */
+  cast?: Record<string, Cast>;
 }
 
 export interface Encore {
@@ -146,7 +162,24 @@ export function validateSkin(raw: unknown): SkinManifest | string[] {
       if (!r || !int(r.x, 0, 8192) || !int(r.y, 0, 8192) || !int(r.w, 1, 640) || !int(r.h, 1, 360) || (r.frames !== undefined && !int(r.frames, 1, 64)))
         errs.push(`sprite ${name}: x, y, w, h (and frames 1..64) must be whole numbers`);
     }
-  const known = (s: string) => s === "file" || (sprites != null && Object.hasOwn(sprites, s));
+  const plain = (s: string) => s === "file" || (sprites != null && Object.hasOwn(sprites, s));
+  const cast = m.cast as Record<string, Cast> | undefined;
+  if (cast !== undefined) {
+    if (!cast || typeof cast !== "object" || Array.isArray(cast) || Object.keys(cast).length > 8) errs.push("cast must be an object of up to 8 roles");
+    else
+      for (const [role, c] of Object.entries(cast)) {
+        if (!CAST_ROLE.test(role)) errs.push(`cast ${role}: role names are letters, digits or -`);
+        if (!c || !Array.isArray(c.members) || !c.members.length || c.members.length > 32 || !c.members.every((x) => typeof x === "string" && x.length > 0 && x.length <= 40))
+          errs.push(`cast ${role}: members must be 1..32 names`);
+        if (c?.on !== undefined && (!Array.isArray(c.on) || !c.on.length || !c.on.every((e) => SKIN_EVENTS.includes(e)))) errs.push(`cast ${role}: on must list actions`);
+      }
+  }
+  const known = (s: string) => {
+    const ref = parseCastRef(s);
+    if (!ref) return plain(s);
+    const c = cast && typeof cast === "object" && Object.hasOwn(cast, ref.role) ? cast[ref.role] : undefined;
+    return !!c && Array.isArray(c.members) && c.members.every((who) => plain(`${who}${ref.suffix}`) && `${who}${ref.suffix}` !== "file");
+  };
 
   if (m.bands !== undefined) {
     const bands = m.bands as unknown[];
@@ -162,10 +195,11 @@ export function validateSkin(raw: unknown): SkinManifest | string[] {
     scene.forEach((p, i) => {
       if (!p || typeof p.sprite !== "string" || !known(p.sprite) || p.sprite === "file") errs.push(`scene ${i + 1}: unknown sprite ${p?.sprite}`);
       else if (!inStage(p.x, p.y) || (p.fps !== undefined && !num(p.fps, 0, 30))) errs.push(`scene ${i + 1}: bad position or fps`);
+      else if (p.idle !== undefined && typeof p.idle !== "boolean") errs.push(`scene ${i + 1}: idle must be true or false`);
       else if (p.tally !== undefined) {
         const t = p.tally;
         if (!t || !Array.isArray(t.on) || !t.on.length || !t.on.every((e) => SKIN_EVENTS.includes(e))) errs.push(`scene ${i + 1}: tally.on must list actions`);
-        if (!t || !Array.isArray(t.sprites) || !t.sprites.length || t.sprites.length > 16 || !t.sprites.every((s) => typeof s === "string" && known(s) && s !== "file"))
+        if (!t || !Array.isArray(t.sprites) || !t.sprites.length || t.sprites.length > 16 || !t.sprites.every((s) => typeof s === "string" && plain(s) && s !== "file"))
           errs.push(`scene ${i + 1}: tally.sprites must be 1..16 known sprites`);
       }
     });
@@ -322,4 +356,27 @@ export function encoreFor(m: SkinManifest, event: SkinEvent, counts: Partial<Rec
 
 export function caption(template: string, c: Captions): string {
   return template.replace(/\{(name|newName|dest|kind)\}/g, (_, k: keyof Captions) => c[k] ?? "");
+}
+
+// ---------- cast ----------
+
+const CAST_ROLE = /^[a-z][a-z0-9-]{0,20}$/i;
+
+/** "@hero+1.walk" -> { role: "hero", ahead: 1, suffix: ".walk" }; null for a plain sprite name. */
+export function parseCastRef(s: string): { role: string; ahead: number; suffix: string } | null {
+  const r = /^@([a-z][a-z0-9-]{0,20})(?:\+(\d))?(\..*)?$/i.exec(s);
+  return r ? { role: r[1], ahead: Number(r[2] ?? 0), suffix: r[3] ?? "" } : null;
+}
+
+/** Whose turn it is in a role after `counts` decisions (wrapping around the members). */
+export function castMember(c: Cast, counts: Partial<Record<SkinEvent, number>>, ahead = 0): string {
+  const n = (c.on ?? SKIN_EVENTS).reduce((a, e) => a + (counts[e] ?? 0), 0) + ahead;
+  return c.members[((n % c.members.length) + c.members.length) % c.members.length];
+}
+
+/** The sheet sprite a name means: cast references are filled in, plain names pass through. */
+export function resolveSprite(m: SkinManifest, name: string, counts: Partial<Record<SkinEvent, number>>): string {
+  const ref = parseCastRef(name);
+  const c = ref && m.cast?.[ref.role];
+  return ref && c ? `${castMember(c, counts, ref.ahead)}${ref.suffix}` : name;
 }

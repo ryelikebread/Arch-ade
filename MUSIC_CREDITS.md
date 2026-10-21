@@ -35,8 +35,12 @@ sampled, downloaded or adapted from other music.
 | Kitchen Radio | Sunday Stew | Notes in `src/audio/songs/peasoup.ts`, synthesized at runtime | CC0 1.0 |
 | Castle Radio | Audience with the King | Notes in `src/audio/songs/royal-court.ts`, synthesized at runtime | CC0 1.0 |
 | Castle Radio | The Jester's Jig | Notes in `src/audio/songs/royal-court.ts`, synthesized at runtime | CC0 1.0 |
+| Heist Radio | Bank Heist | Notes in `src/audio/songs/bank-heist.ts`, synthesized at runtime | CC0 1.0 |
+| Heist Radio | Getaway Van | Notes in `src/audio/songs/bank-heist.ts`, synthesized at runtime | CC0 1.0 |
+| Lair Radio | Dragon Hoard | Notes in `src/audio/songs/dragon-hoard.ts`, synthesized at runtime | CC0 1.0 |
+| Lair Radio | Princess's Serenade | Notes in `src/audio/songs/dragon-hoard.ts`, synthesized at runtime | CC0 1.0 |
 | (skins, arcade) | Sound effects: blip, pop, chime, whoosh, sizzle, rumble, tom, tomHi, horn, splash, launch, explosion, beam, jingle, rewind, shoot, hit, hurt, jump, coin, powerup, bounce, gameover, win | Synth recipes in `src/audio/sfx.ts` | CC0 1.0 |
-| (skins) | Pigeon Court, Peasoup and Royal Court effects (court*, soup*, royal*) | Synth recipes in `src/audio/effects/` | CC0 1.0 |
+| (skins) | Pigeon Court, Peasoup, Royal Court, Bank Heist and Dragon Hoard effects (court*, soup*, royal*, heist*, dragon*) | Synth recipes in `src/audio/effects/` | CC0 1.0 |
 
 The chord progressions are common ones (for example Am, F, C, G); the melodies, bass
 lines and drum patterns are written for these tracks. Station moods: Night Drive is

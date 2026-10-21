@@ -5,6 +5,8 @@
 //   &scale=2            pixel scale
 //   &only=trash         just one action (with its variants)
 //   &t=0.5              one still per animation at that moment
+//   &idle=1             the live scene between decisions (&n=3: after 3 decisions,
+//                       once the last animation has finished)
 // Example: /dev/skin.html?skin=royal&steps=8
 
 import { listSkins, loadSkin } from "./index";
@@ -34,6 +36,15 @@ async function main() {
     (m.variants?.[ev] ?? []).forEach((a, i) => rows.push([`${ev} v${i + 2}`, a]));
   }
   const [w, h] = m.size;
+  if (q.has("idle")) {
+    // The live stage: scenery animating, the file waiting for a decision.
+    // Each decision plays its animation; the last one ends after a few seconds.
+    for (let i = 0; i < Number(q.get("n") ?? 0); i++) stage.play("keep", "pdf", captions);
+    stage.setFile("pdf");
+    stage.canvas.style.width = `${w * scale}px`;
+    document.body.append(stage.canvas);
+    return;
+  }
   for (const [label, anim] of rows) {
     const row = document.createElement("div");
     row.className = "row";
